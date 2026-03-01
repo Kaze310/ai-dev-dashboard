@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { useState } from "react";
 
 type SyncResponse = {
   synced: number;
@@ -12,57 +12,99 @@ type SaveResponse = {
   error?: string;
 };
 
-export function OpenAISettingsForm({ hasKey }: { hasKey: boolean }) {
-  const [apiKey, setApiKey] = useState("");
-  const [saveMessage, setSaveMessage] = useState("");
-  const [syncMessage, setSyncMessage] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
+type ProviderName = "openai" | "anthropic";
 
-  const handleSave = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSaveMessage("");
+type ProviderState = {
+  apiKey: string;
+  saveMessage: string;
+  syncMessage: string;
+  isSaving: boolean;
+  isSyncing: boolean;
+  hasKey: boolean;
+};
 
-    if (!apiKey.trim()) {
-      setSaveMessage("请输入 OpenAI API Key。");
+export function OpenAISettingsForm({
+  hasOpenAIKey,
+  hasAnthropicKey,
+}: {
+  hasOpenAIKey: boolean;
+  hasAnthropicKey: boolean;
+}) {
+  const [providers, setProviders] = useState<Record<ProviderName, ProviderState>>({
+    openai: {
+      apiKey: "",
+      saveMessage: "",
+      syncMessage: "",
+      isSaving: false,
+      isSyncing: false,
+      hasKey: hasOpenAIKey,
+    },
+    anthropic: {
+      apiKey: "",
+      saveMessage: "",
+      syncMessage: "",
+      isSaving: false,
+      isSyncing: false,
+      hasKey: hasAnthropicKey,
+    },
+  });
+
+  const updateProvider = (name: ProviderName, patch: Partial<ProviderState>) => {
+    setProviders((prev) => ({
+      ...prev,
+      [name]: {
+        ...prev[name],
+        ...patch,
+      },
+    }));
+  };
+
+  const providerLabel = (name: ProviderName) => (name === "openai" ? "OpenAI" : "Anthropic");
+
+  const handleSave = async (name: ProviderName) => {
+    const current = providers[name];
+    if (!current.apiKey.trim()) {
+      updateProvider(name, { saveMessage: `请输入 ${providerLabel(name)} API Key。` });
       return;
     }
 
-    setIsSaving(true);
+    updateProvider(name, { isSaving: true, saveMessage: "" });
 
     try {
-      // 调后端 API 保存 key：key 不在浏览器端持久化，只发送一次给服务端。
-      const response = await fetch("/api/providers/openai", {
+      const response = await fetch(`/api/providers/${name}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ apiKey: apiKey.trim() }),
+        body: JSON.stringify({ apiKey: current.apiKey.trim() }),
       });
 
       const result = (await response.json()) as SaveResponse;
 
       if (!response.ok) {
-        setSaveMessage(result.error ?? "保存失败，请稍后重试。");
+        updateProvider(name, { saveMessage: result.error ?? "保存失败，请稍后重试。", isSaving: false });
         return;
       }
 
-      setSaveMessage("OpenAI API Key 已保存（仅服务端存储）。");
-      setApiKey("");
+      updateProvider(name, {
+        saveMessage: `${providerLabel(name)} API Key 已保存（仅服务端存储）。`,
+        apiKey: "",
+        isSaving: false,
+        hasKey: true,
+      });
     } catch (error) {
-      setSaveMessage(error instanceof Error ? error.message : "保存失败，请稍后重试。");
-    } finally {
-      setIsSaving(false);
+      updateProvider(name, {
+        saveMessage: error instanceof Error ? error.message : "保存失败，请稍后重试。",
+        isSaving: false,
+      });
     }
   };
 
-  const handleSync = async () => {
-    setSyncMessage("");
-    setIsSyncing(true);
+  const handleSync = async (name: ProviderName) => {
+    updateProvider(name, { isSyncing: true, syncMessage: "" });
 
     try {
-      // 手动触发后端同步逻辑，由服务端拿 key 请求 OpenAI usage。
-      const response = await fetch("/api/sync/openai", {
+      const response = await fetch(`/api/sync/${name}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -74,72 +116,81 @@ export function OpenAISettingsForm({ hasKey }: { hasKey: boolean }) {
 
       if (!response.ok) {
         const message = result.errors?.join("; ") || "同步失败，请稍后重试。";
-        setSyncMessage(message);
+        updateProvider(name, { syncMessage: message, isSyncing: false });
         return;
       }
 
       if (result.errors.length > 0) {
-        setSyncMessage(`同步完成，但有错误：${result.errors.join("; ")}`);
+        updateProvider(name, {
+          syncMessage: `同步完成，但有错误：${result.errors.join("; ")}`,
+          isSyncing: false,
+        });
         return;
       }
 
-      setSyncMessage(`同步成功，写入/更新 ${result.synced} 条 usage 记录。`);
+      updateProvider(name, {
+        syncMessage: `同步成功，写入/更新 ${result.synced} 条 usage 记录。`,
+        isSyncing: false,
+      });
     } catch (error) {
-      setSyncMessage(error instanceof Error ? error.message : "同步失败，请稍后重试。");
-    } finally {
-      setIsSyncing(false);
+      updateProvider(name, {
+        syncMessage: error instanceof Error ? error.message : "同步失败，请稍后重试。",
+        isSyncing: false,
+      });
     }
   };
 
-  return (
-    <section className="mt-8 space-y-6">
-      <div className="rounded-lg border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">OpenAI API Key</h2>
+  const renderProviderCard = (name: ProviderName) => {
+    const state = providers[name];
+
+    return (
+      <div key={name} className="rounded-lg border border-zinc-200 p-5">
+        <h2 className="text-lg font-semibold">{providerLabel(name)} API Key</h2>
         <p className="mt-1 text-sm text-zinc-600">
-          {hasKey ? "已存在已保存的 key，可直接更新。" : "当前还没有保存 key。"}
+          {state.hasKey ? "已存在已保存的 key，可直接更新。" : "当前还没有保存 key。"}
         </p>
 
-        <form onSubmit={handleSave} className="mt-4 space-y-3">
+        <div className="mt-4 space-y-3">
           <div>
-            <label htmlFor="openai-key" className="mb-1 block text-sm font-medium">
+            <label htmlFor={`${name}-key`} className="mb-1 block text-sm font-medium">
               API Key
             </label>
             <input
-              id="openai-key"
+              id={`${name}-key`}
               type="password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder="sk-..."
+              value={state.apiKey}
+              onChange={(event) => updateProvider(name, { apiKey: event.target.value })}
+              placeholder={name === "openai" ? "sk-..." : "sk-ant-..."}
               className="w-full rounded-md border border-zinc-300 px-3 py-2"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={isSaving}
-            className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {isSaving ? "保存中..." : "保存 API Key"}
-          </button>
-        </form>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => void handleSave(name)}
+              disabled={state.isSaving}
+              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {state.isSaving ? "保存中..." : "保存 API Key"}
+            </button>
 
-        {saveMessage ? <p className="mt-3 text-sm">{saveMessage}</p> : null}
+            <button
+              type="button"
+              onClick={() => void handleSync(name)}
+              disabled={state.isSyncing}
+              className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50"
+            >
+              {state.isSyncing ? "同步中..." : "Sync Now"}
+            </button>
+          </div>
+        </div>
+
+        {state.saveMessage ? <p className="mt-3 text-sm">{state.saveMessage}</p> : null}
+        {state.syncMessage ? <p className="mt-2 text-sm">{state.syncMessage}</p> : null}
       </div>
+    );
+  };
 
-      <div className="rounded-lg border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">Usage 同步</h2>
-        <p className="mt-1 text-sm text-zinc-600">点击按钮拉取最近 30 天 OpenAI usage。</p>
-
-        <button
-          onClick={handleSync}
-          disabled={isSyncing}
-          className="mt-4 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50"
-        >
-          {isSyncing ? "同步中..." : "Sync Now"}
-        </button>
-
-        {syncMessage ? <p className="mt-3 text-sm">{syncMessage}</p> : null}
-      </div>
-    </section>
-  );
+  return <section className="mt-8 space-y-6">{(["openai", "anthropic"] as ProviderName[]).map(renderProviderCard)}</section>;
 }

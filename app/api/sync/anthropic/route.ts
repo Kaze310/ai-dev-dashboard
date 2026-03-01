@@ -1,0 +1,100 @@
+import { NextResponse } from "next/server";
+
+import { fetchAnthropicUsage } from "@/lib/providers/anthropic";
+import { createClient } from "@/lib/supabase/server";
+
+type SyncBody = {
+  startDate?: string;
+  endDate?: string;
+};
+
+function getDefaultDateRange() {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(end.getDate() - 30);
+
+  return {
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+  };
+}
+
+export async function POST(request: Request) {
+  const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ synced: 0, errors: ["Unauthorized"] }, { status: 401 });
+  }
+
+  let body: SyncBody = {};
+  try {
+    body = (await request.json()) as SyncBody;
+  } catch {
+    // body 可选，不传也允许。
+  }
+
+  const defaults = getDefaultDateRange();
+  const startDate = body.startDate ?? defaults.startDate;
+  const endDate = body.endDate ?? defaults.endDate;
+
+  const { data: provider, error: providerError } = await supabase
+    .from("providers")
+    .select("id, api_key_encrypted")
+    .eq("user_id", user.id)
+    .eq("name", "anthropic")
+    .maybeSingle();
+
+  if (providerError) {
+    return NextResponse.json({ synced: 0, errors: [providerError.message] }, { status: 500 });
+  }
+
+  if (!provider?.id || !provider.api_key_encrypted) {
+    return NextResponse.json(
+      { synced: 0, errors: ["Anthropic provider key not found. Please save API key first."] },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const usage = await fetchAnthropicUsage(provider.api_key_encrypted, startDate, endDate);
+
+    if (usage.length === 0) {
+      return NextResponse.json({ synced: 0, errors: [] });
+    }
+
+    const rows = usage.map((item) => ({
+      user_id: user.id,
+      provider_id: provider.id,
+      date: item.date,
+      model: item.model,
+      input_tokens: item.input_tokens,
+      output_tokens: item.output_tokens,
+      cost_cents: item.cost_cents,
+      raw_json: item,
+    }));
+
+    const { error: upsertError } = await supabase
+      .from("usage_records")
+      .upsert(rows, { onConflict: "provider_id,date,model" });
+
+    if (upsertError) {
+      return NextResponse.json({ synced: 0, errors: [upsertError.message] }, { status: 500 });
+    }
+
+    await supabase
+      .from("usage_records")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("provider_id", provider.id)
+      .in("model", ["unknown", "UNKNOWN", "Unknown", ""]);
+
+    return NextResponse.json({ synced: rows.length, errors: [] });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ synced: 0, errors: [message] }, { status: 500 });
+  }
+}
