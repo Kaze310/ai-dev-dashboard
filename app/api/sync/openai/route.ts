@@ -87,6 +87,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ synced: 0, errors: [upsertError.message] }, { status: 500 });
     }
 
+    // 清理历史遗留的 unknown/空模型行，避免旧脏数据继续出现在 UI 中。
+    await supabase
+      .from("usage_records")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("provider_id", provider.id)
+      .in("model", ["unknown", "UNKNOWN", "Unknown", ""]);
+
     return NextResponse.json({ synced: rows.length, errors: [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

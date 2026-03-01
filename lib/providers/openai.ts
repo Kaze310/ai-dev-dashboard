@@ -8,33 +8,39 @@ export type OpenAIUsageRecord = {
 
 type UsageApiResponse = {
   data?: unknown[];
-  results?: unknown[];
-  usage?: unknown[];
   has_more?: boolean;
   next_page?: string | null;
-  next?: string | null;
 };
 
 const OPENAI_BASE_URL = "https://api.openai.com";
-const DEFAULT_PAGE_LIMIT = 100;
+const MAX_DAYS_PER_REQUEST = 31;
+const DAY_SECONDS = 24 * 60 * 60;
+const MAX_PAGE_LIMIT = 31;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function toDateString(value: unknown): string {
-  // 统一把日期转成 YYYY-MM-DD，方便数据库按天统计与去重。
-  if (typeof value === "string") {
-    // 兼容已经是 YYYY-MM-DD 或 ISO 时间字符串。
-    return value.length >= 10 ? value.slice(0, 10) : value;
+function normalizeModel(value: unknown): string {
+  if (typeof value !== "string") {
+    return "unknown";
   }
 
-  if (typeof value === "number") {
-    // 一些接口会返回 Unix 秒时间戳。
-    return new Date(value * 1000).toISOString().slice(0, 10);
+  const normalized = value.trim();
+  if (!normalized || normalized === "null" || normalized === "undefined") {
+    return "unknown";
   }
 
-  return new Date().toISOString().slice(0, 10);
+  return normalized;
+}
+
+function isValidModelValue(value: unknown): value is string {
+  if (typeof value !== "string") {
+    return false;
+  }
+
+  const normalized = value.trim();
+  return normalized !== "" && normalized !== "null" && normalized !== "undefined";
 }
 
 function toNumber(value: unknown): number {
@@ -50,125 +56,110 @@ function toNumber(value: unknown): number {
   return 0;
 }
 
-function toCostCents(item: Record<string, unknown>): number {
-  // 优先读取明确的 cents 字段。
-  if (typeof item.cost_cents === "number") {
-    return Math.max(0, Math.round(item.cost_cents));
-  }
-
-  // 兼容常见美元字段（例如 total_cost / cost / amount_usd）。
-  const usdCandidate =
-    toNumber(item.total_cost) ||
-    toNumber(item.cost) ||
-    toNumber(item.amount_usd) ||
-    toNumber(item.usd);
-
-  return Math.max(0, Math.round(usdCandidate * 100));
+function unixSecondsToDateString(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toISOString().slice(0, 10);
 }
 
-function parseSingleUsageItem(item: Record<string, unknown>): OpenAIUsageRecord[] {
-  // 一些响应是按“天 bucket + results[]”嵌套，先展开 results。
-  if (Array.isArray(item.results)) {
-    const bucketDate = toDateString(item.date ?? item.start_time ?? item.timestamp);
-
-    return item.results
-      .filter(isObject)
-      .map((result) => {
-        const inputTokens =
-          toNumber(result.input_tokens) ||
-          toNumber(result.prompt_tokens) ||
-          toNumber(result.n_context_tokens_total);
-
-        const outputTokens =
-          toNumber(result.output_tokens) ||
-          toNumber(result.completion_tokens) ||
-          toNumber(result.n_generated_tokens_total);
-
-        return {
-          date: bucketDate,
-          model: String(result.model ?? result.model_name ?? "unknown"),
-          input_tokens: Math.max(0, Math.round(inputTokens)),
-          output_tokens: Math.max(0, Math.round(outputTokens)),
-          cost_cents: toCostCents(result),
-        };
-      });
-  }
-
-  const inputTokens =
-    toNumber(item.input_tokens) ||
-    toNumber(item.prompt_tokens) ||
-    toNumber(item.n_context_tokens_total);
-
-  const outputTokens =
-    toNumber(item.output_tokens) ||
-    toNumber(item.completion_tokens) ||
-    toNumber(item.n_generated_tokens_total);
-
-  return [
-    {
-      date: toDateString(item.date ?? item.start_time ?? item.timestamp),
-      model: String(item.model ?? item.model_name ?? "unknown"),
-      input_tokens: Math.max(0, Math.round(inputTokens)),
-      output_tokens: Math.max(0, Math.round(outputTokens)),
-      cost_cents: toCostCents(item),
-    },
-  ];
+function dateToStartUnixSeconds(dateString: string): number {
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  return Math.floor(date.getTime() / 1000);
 }
 
-function extractItems(payload: unknown): unknown[] {
-  if (Array.isArray(payload)) {
-    return payload;
-  }
+function dateToEndUnixSecondsExclusive(dateString: string): number {
+  // end_time 用“次日 00:00:00（不含）”，这样可以覆盖 endDate 当天完整 24 小时。
+  const date = new Date(`${dateString}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return Math.floor(date.getTime() / 1000);
+}
 
-  if (!isObject(payload)) {
+function buildCostKey(date: string, model: string): string {
+  return `${date}|${model}`;
+}
+
+function stripModelDateSuffix(model: string): string {
+  return model.replace(/-(20\d{2}-\d{2}-\d{2})$/, "");
+}
+
+function canonicalizeUsageModel(model: string): string {
+  return stripModelDateSuffix(model.toLowerCase());
+}
+
+function canonicalizeCostLineItem(lineItem: string): string {
+  const normalized = lineItem.trim().toLowerCase();
+
+  // 常见 line_item 会带 input/output 等后缀，先剥离。
+  const withoutSuffix = normalized
+    .replace(/\s+(input|output|cached_input|cached_output|cached input|cached output)$/i, "")
+    .replace(/\s*\((input|output|cached_input|cached_output|cached input|cached output)\)$/i, "");
+
+  // 提取以 gpt-/o1/o3/o4 开头的模型 token；找不到就回退原值。
+  const match = withoutSuffix.match(/(gpt-[a-z0-9.-]+|o[0-9]+(?:-[a-z0-9.-]+)?)/i);
+  const token = match ? match[1] : withoutSuffix.split(/\s+/)[0] ?? withoutSuffix;
+
+  return stripModelDateSuffix(token);
+}
+
+function parseBucket(bucket: Record<string, unknown>): OpenAIUsageRecord[] {
+  const bucketStart = toNumber(bucket.start_time);
+  const date = unixSecondsToDateString(bucketStart || Math.floor(Date.now() / 1000));
+
+  if (!Array.isArray(bucket.results)) {
     return [];
   }
 
-  const typed = payload as UsageApiResponse;
+  return bucket.results
+    .filter(isObject)
+    // 过滤聚合/脏数据行：只保留明确字符串模型名。
+    .filter((result) => isValidModelValue(result.model))
+    .map((result) => {
+      // 官方 usage/completions 里常见字段：input_tokens、output_tokens、model。
+      const inputTokens = toNumber(result.input_tokens);
+      const outputTokens = toNumber(result.output_tokens);
 
-  if (Array.isArray(typed.data)) {
-    return typed.data;
-  }
-
-  if (Array.isArray(typed.results)) {
-    return typed.results;
-  }
-
-  if (Array.isArray(typed.usage)) {
-    return typed.usage;
-  }
-
-  return [];
+      return {
+        date,
+        model: normalizeModel(result.model),
+        input_tokens: Math.max(0, Math.round(inputTokens)),
+        output_tokens: Math.max(0, Math.round(outputTokens)),
+        // 花费由 /organization/costs 单独提供，先初始化为 0，后续再合并。
+        cost_cents: 0,
+      };
+    });
 }
 
-async function fetchUsageFromPath(
+async function fetchUsageRange(
   apiKey: string,
-  path: string,
-  startDate: string,
-  endDate: string,
+  startTime: number,
+  endTime: number,
 ): Promise<OpenAIUsageRecord[]> {
   const records: OpenAIUsageRecord[] = [];
   let page: string | undefined;
 
   while (true) {
     const params = new URLSearchParams({
-      start_date: startDate,
-      end_date: endDate,
-      limit: String(DEFAULT_PAGE_LIMIT),
+      start_time: String(startTime),
+      end_time: String(endTime),
+      bucket_width: "1d",
+      limit: String(MAX_PAGE_LIMIT),
     });
+    // 关键修复：让 usage 按 model 聚合，否则 model 可能是 null。
+    params.append("group_by[]", "model");
 
     if (page) {
       params.set("page", page);
     }
 
-    const response = await fetch(`${OPENAI_BASE_URL}${path}?${params.toString()}`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
+    const response = await fetch(
+      `${OPENAI_BASE_URL}/v1/organization/usage/completions?${params.toString()}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
       },
-      cache: "no-store",
-    });
+    );
 
     if (!response.ok) {
       const text = await response.text();
@@ -176,20 +167,19 @@ async function fetchUsageFromPath(
     }
 
     const payload: unknown = await response.json();
-    const items = extractItems(payload);
+    const typed = isObject(payload) ? (payload as UsageApiResponse) : undefined;
+    const buckets = Array.isArray(typed?.data) ? typed.data : [];
 
-    for (const item of items) {
-      if (!isObject(item)) {
+    for (const bucket of buckets) {
+      if (!isObject(bucket)) {
         continue;
       }
 
-      records.push(...parseSingleUsageItem(item));
+      records.push(...parseBucket(bucket));
     }
 
-    // 兼容不同接口返回的分页字段。
-    const typed = isObject(payload) ? (payload as UsageApiResponse) : undefined;
-    const nextPage = typed?.next_page ?? typed?.next ?? undefined;
     const hasMore = Boolean(typed?.has_more);
+    const nextPage = typed?.next_page ?? undefined;
 
     if (!hasMore || !nextPage) {
       break;
@@ -201,23 +191,212 @@ async function fetchUsageFromPath(
   return records;
 }
 
+async function fetchCostsRange(
+  apiKey: string,
+  startTime: number,
+  endTime: number,
+): Promise<Map<string, number>> {
+  // 这里的 map value 用 USD 浮点累加，最后分配给记录时再统一换算成 cents。
+  const costMap = new Map<string, number>();
+  let page: string | undefined;
+
+  while (true) {
+    const params = new URLSearchParams({
+      start_time: String(startTime),
+      end_time: String(endTime),
+      bucket_width: "1d",
+      limit: String(MAX_PAGE_LIMIT),
+    });
+    params.append("group_by[]", "line_item");
+
+    if (page) {
+      params.set("page", page);
+    }
+
+    const response = await fetch(`${OPENAI_BASE_URL}/v1/organization/costs?${params.toString()}`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`OpenAI costs API error ${response.status}: ${text}`);
+    }
+
+    const payload: unknown = await response.json();
+    const typed = isObject(payload) ? (payload as UsageApiResponse) : undefined;
+    const buckets = Array.isArray(typed?.data) ? typed.data : [];
+
+    for (const bucket of buckets) {
+      if (!isObject(bucket) || !Array.isArray(bucket.results)) {
+        continue;
+      }
+
+      const bucketStart = toNumber(bucket.start_time);
+      const date = unixSecondsToDateString(bucketStart || Math.floor(Date.now() / 1000));
+
+      for (const result of bucket.results) {
+        if (!isObject(result)) {
+          continue;
+        }
+
+        const model = normalizeModel(result.line_item);
+        if (model === "unknown") {
+          continue;
+        }
+
+        const canonicalModel = canonicalizeCostLineItem(model);
+        const amount = isObject(result.amount) ? result.amount : {};
+        const usd = Math.max(0, toNumber(amount.value));
+
+        const key = buildCostKey(date, canonicalModel);
+        const previous = costMap.get(key) ?? 0;
+        costMap.set(key, previous + usd);
+      }
+    }
+
+    const hasMore = Boolean(typed?.has_more);
+    const nextPage = typed?.next_page ?? undefined;
+    if (!hasMore || !nextPage) {
+      break;
+    }
+
+    page = nextPage;
+  }
+
+  return costMap;
+}
+
+function splitIntoUsageWindows(startTime: number, endTime: number): Array<{ start: number; end: number }> {
+  const windows: Array<{ start: number; end: number }> = [];
+  let cursor = startTime;
+  const maxWindowSeconds = MAX_DAYS_PER_REQUEST * DAY_SECONDS;
+
+  while (cursor < endTime) {
+    const windowEnd = Math.min(endTime, cursor + maxWindowSeconds);
+    windows.push({ start: cursor, end: windowEnd });
+    cursor = windowEnd;
+  }
+
+  return windows;
+}
+
+async function fetchOpenAICosts(
+  apiKey: string,
+  startDate: string,
+  endDate: string,
+): Promise<Map<string, number>> {
+  const startTime = dateToStartUnixSeconds(startDate);
+  const endTime = dateToEndUnixSecondsExclusive(endDate);
+
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime >= endTime) {
+    throw new Error("Invalid date range for OpenAI costs sync");
+  }
+
+  const windows = splitIntoUsageWindows(startTime, endTime);
+  const merged = new Map<string, number>();
+
+  for (const window of windows) {
+    const partial = await fetchCostsRange(apiKey, window.start, window.end);
+    for (const [key, value] of partial.entries()) {
+      const previous = merged.get(key) ?? 0;
+      merged.set(key, previous + value);
+    }
+  }
+
+  return merged;
+}
+
 export async function fetchOpenAIUsage(
   apiKey: string,
   startDate: string,
   endDate: string,
 ): Promise<OpenAIUsageRecord[]> {
-  // 某些 key 只支持 organization usage；某些环境可能仍是 /v1/usage。
-  const candidatePaths = ["/v1/organization/usage", "/v1/usage"];
-  const errors: string[] = [];
+  const startTime = dateToStartUnixSeconds(startDate);
+  const endTime = dateToEndUnixSecondsExclusive(endDate);
 
-  for (const path of candidatePaths) {
-    try {
-      return await fetchUsageFromPath(apiKey, path, startDate, endDate);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      errors.push(`${path}: ${message}`);
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || startTime >= endTime) {
+    throw new Error("Invalid date range for OpenAI usage sync");
+  }
+
+  const windows = splitIntoUsageWindows(startTime, endTime);
+  const allRecords: OpenAIUsageRecord[] = [];
+
+  for (const window of windows) {
+    const partial = await fetchUsageRange(apiKey, window.start, window.end);
+    allRecords.push(...partial);
+  }
+
+  const costMap = await fetchOpenAICosts(apiKey, startDate, endDate);
+  const costByRecordIndex = new Map<number, number>();
+  const groups = new Map<string, number[]>();
+
+  // 先按“日期 + 规范化模型名”分组。
+  allRecords.forEach((record, index) => {
+    const canonicalModel = canonicalizeUsageModel(record.model);
+    const groupKey = buildCostKey(record.date, canonicalModel);
+    const existing = groups.get(groupKey) ?? [];
+    existing.push(index);
+    groups.set(groupKey, existing);
+  });
+
+  // 按组分配成本：单条就全给；多条则按 token 占比分摊，避免重复记账。
+  for (const [groupKey, recordIndexes] of groups.entries()) {
+    const groupCostUsd = costMap.get(groupKey) ?? 0;
+    if (groupCostUsd <= 0) {
+      continue;
+    }
+
+    if (recordIndexes.length === 1) {
+      costByRecordIndex.set(recordIndexes[0], Math.max(0, Math.round(groupCostUsd * 100)));
+      continue;
+    }
+
+    const tokens = recordIndexes.map((idx) => {
+      const record = allRecords[idx];
+      return Math.max(0, record.input_tokens + record.output_tokens);
+    });
+    const totalTokens = tokens.reduce((sum, value) => sum + value, 0);
+    const totalGroupCents = Math.max(0, Math.round(groupCostUsd * 100));
+
+    if (totalTokens <= 0) {
+      const equalShareUsd = groupCostUsd / recordIndexes.length;
+      let assigned = 0;
+      for (let i = 0; i < recordIndexes.length; i += 1) {
+        const idx = recordIndexes[i];
+        if (i === recordIndexes.length - 1) {
+          costByRecordIndex.set(idx, Math.max(0, totalGroupCents - assigned));
+          continue;
+        }
+
+        const shareCents = Math.max(0, Math.round(equalShareUsd * 100));
+        costByRecordIndex.set(idx, shareCents);
+        assigned += shareCents;
+      }
+      continue;
+    }
+
+    let assignedCents = 0;
+    for (let i = 0; i < recordIndexes.length; i += 1) {
+      const idx = recordIndexes[i];
+      if (i === recordIndexes.length - 1) {
+        costByRecordIndex.set(idx, Math.max(0, totalGroupCents - assignedCents));
+        continue;
+      }
+
+      const shareUsd = (tokens[i] / totalTokens) * groupCostUsd;
+      const shareCents = Math.max(0, Math.round(shareUsd * 100));
+      costByRecordIndex.set(idx, shareCents);
+      assignedCents += shareCents;
     }
   }
 
-  throw new Error(`Failed to fetch OpenAI usage from all endpoints. ${errors.join(" | ")}`);
+  return allRecords.map((record, index) => ({
+    ...record,
+    cost_cents: costByRecordIndex.get(index) ?? 0,
+  }));
 }
