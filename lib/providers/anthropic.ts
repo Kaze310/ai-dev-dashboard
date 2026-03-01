@@ -89,13 +89,29 @@ function canonicalizeCostIdentifier(identifier: string): string {
     .replace(/\s+input$/i, "")
     .replace(/\s+output$/i, "")
     .replace(/\s+cache_read$/i, "")
-    .replace(/\s+cache_write$/i, "");
+    .replace(/\s+cache_write$/i, "")
+    .replace(/\s*-\s*(input|output)\s+tokens$/i, "")
+    .replace(/\s+usage$/i, "")
+    .trim();
+
+  // Anthropic 常见格式：Claude Opus 4.6 Usage - Input Tokens
+  // 统一转为 claude-opus-4-6，便于和 usage model 对齐。
+  const spacedMatch = withoutSuffix.match(/^claude\s+([a-z0-9]+)\s+([0-9.]+)/i);
+  if (spacedMatch) {
+    const family = spacedMatch[1];
+    const version = spacedMatch[2].replace(/\./g, "-");
+    return canonicalizeModel(`claude-${family}-${version}`);
+  }
 
   // 优先抽取规范模型 token（如 claude-sonnet-4-5）。
   const match = withoutSuffix.match(/(claude-[a-z0-9-]+)/i);
-  const token = match ? match[1] : withoutSuffix;
+  if (match) {
+    return canonicalizeModel(match[1]);
+  }
 
-  return canonicalizeModel(token);
+  // 兜底：把空格/点转成短横线，尽量贴近 usage model 格式。
+  const fallback = withoutSuffix.replace(/[.\s]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  return canonicalizeModel(fallback);
 }
 
 function buildKey(date: string, model: string): string {
@@ -291,12 +307,15 @@ export async function fetchAnthropicUsage(
   });
 
   const costByIndex = new Map<number, number>();
+  let matchedGroupCostCents = 0;
 
   for (const [groupKey, indexes] of groups.entries()) {
     const groupCostCents = costMap.get(groupKey) ?? 0;
     if (groupCostCents <= 0) {
       continue;
     }
+
+    matchedGroupCostCents += groupCostCents;
 
     const totalGroupCents = Math.max(0, Math.round(groupCostCents));
 
@@ -344,6 +363,21 @@ export async function fetchAnthropicUsage(
       costByIndex.set(index, shareCents);
       assignedCents += shareCents;
     }
+  }
+
+  // 临时诊断：核对成本映射覆盖率，定位“总额偏低”来源。
+  const totalCostMapCents = [...costMap.values()].reduce((sum, value) => sum + value, 0);
+  const unmatchedCostEntries = [...costMap.entries()].filter(([key]) => !groups.has(key));
+  const unmatchedCostCents = unmatchedCostEntries.reduce((sum, [, value]) => sum + value, 0);
+
+  console.log(
+    `[anthropic-cost-coverage] range=${startDate}..${endDate} total=${totalCostMapCents.toFixed(2)} matched=${matchedGroupCostCents.toFixed(2)} unmatched=${unmatchedCostCents.toFixed(2)}`,
+  );
+  console.log(
+    `[anthropic-cost-coverage] groups usage=${groups.size} cost=${costMap.size} unmatched_entries=${unmatchedCostEntries.length}`,
+  );
+  for (const [key, value] of unmatchedCostEntries.slice(0, 20)) {
+    console.log(`[anthropic-cost-unmatched] ${key} => ${value.toFixed(2)} cents`);
   }
 
   return usageRecords.map((record, index) => ({
