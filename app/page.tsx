@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 
+import { BudgetSection } from "./components/BudgetSection";
 import { DashboardCharts, type DailyCostPoint, type DailyTokenPoint, type ModelCostPoint } from "./components/DashboardCharts";
 import { SyncButtons } from "./SyncButtons";
 import { CostSummary } from "./components/CostSummary";
@@ -252,6 +253,7 @@ export default async function Home() {
       </div>
 
       <CostSummary />
+      <BudgetSection />
 
       <section className="mt-4 rounded-lg border border-zinc-200 p-5">
         <h2 className="text-lg font-semibold">Manual Sync</h2>

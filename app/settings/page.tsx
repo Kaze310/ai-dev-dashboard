@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 
+import { BudgetSettingsForm } from "./BudgetSettingsForm";
 import { OpenAISettingsForm } from "./OpenAISettingsForm";
 
 export default async function SettingsPage() {
@@ -37,6 +38,7 @@ export default async function SettingsPage() {
       <p className="mt-3 text-sm text-zinc-600">在这里管理 OpenAI / Anthropic API Key 并手动触发 usage 同步。</p>
 
       <OpenAISettingsForm hasOpenAIKey={names.has("openai")} hasAnthropicKey={names.has("anthropic")} />
+      <BudgetSettingsForm />
     </main>
   );
 }

@@ -164,6 +164,7 @@ async function fetchUsageRange(
       }
 
       const date = bucketToDate(bucket);
+      let bucketModelRows = 0;
 
       for (const result of bucket.results) {
         if (!isObject(result)) {
@@ -174,6 +175,9 @@ async function fetchUsageRange(
         if (model === "unknown") {
           continue;
         }
+        bucketModelRows += 1;
+        // 临时诊断：确认 usage_report 当天是否真的返回了按模型拆分的数据行。
+        console.log(`[anthropic-usage-raw] date=${date} model=${JSON.stringify(model)}`);
 
         // Anthropic usage_report/messages 常见字段包含 input/output 与 cache tokens。
         const inputTokens =
@@ -190,6 +194,9 @@ async function fetchUsageRange(
           cost_cents: 0,
         });
       }
+
+      // 临时诊断：每个日期 bucket 命中了多少条模型行。
+      console.log(`[anthropic-usage-bucket] date=${date} model_rows=${bucketModelRows}`);
     }
 
     const hasMore = Boolean(typed?.has_more);
@@ -252,6 +259,7 @@ async function fetchCostRange(
       }
 
       const date = bucketToDate(bucket);
+      let bucketCostRows = 0;
 
       for (const result of bucket.results) {
         if (!isObject(result)) {
@@ -263,6 +271,11 @@ async function fetchCostRange(
         if (!canonical) {
           continue;
         }
+        bucketCostRows += 1;
+        // 临时诊断：确认 cost_report 当天返回的原始 description / line_item。
+        console.log(
+          `[anthropic-cost-raw] date=${date} description=${JSON.stringify(result.description)} line_item=${JSON.stringify(result.line_item)} canonical=${canonical}`,
+        );
 
         const amountObj = isObject(result.amount) ? result.amount : {};
         // Anthropic 文档说明 amount.value 以最小单位（cents）给出，这里先按 cents 浮点累加。
@@ -272,6 +285,9 @@ async function fetchCostRange(
         const previous = costs.get(key) ?? 0;
         costs.set(key, previous + cents);
       }
+
+      // 临时诊断：每个日期 bucket 命中了多少条成本行。
+      console.log(`[anthropic-cost-bucket] date=${date} cost_rows=${bucketCostRows}`);
     }
 
     const hasMore = Boolean(typed?.has_more);
