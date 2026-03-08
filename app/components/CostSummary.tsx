@@ -127,29 +127,32 @@ export function CostSummary() {
   const rangeLabel = summary?.label ?? "-";
 
   return (
-    <section className="mt-8 rounded-lg border border-zinc-200 p-5">
+    <section className="glass-panel mt-8 overflow-hidden rounded-[28px] p-6 sm:p-7">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Cost Summary</h2>
+        <div>
+          <p className="section-eyebrow">Snapshot</p>
+          <h2 className="mt-2 text-xl font-semibold text-zinc-900">Cost Summary</h2>
+        </div>
 
-        <div className="inline-flex rounded-full border border-zinc-300 bg-zinc-50 p-1 text-sm">
+        <div className="inline-flex rounded-full border border-[color:var(--line)] bg-white/75 p-1 text-sm shadow-sm">
           <button
             type="button"
             onClick={() => setMode("today")}
-            className={`rounded-full px-3 py-1 ${mode === "today" ? "bg-black text-white" : "text-zinc-700"}`}
+            className={`rounded-full px-3 py-1.5 ${mode === "today" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
           >
             Today
           </button>
           <button
             type="button"
             onClick={() => setMode("month")}
-            className={`rounded-full px-3 py-1 ${mode === "month" ? "bg-black text-white" : "text-zinc-700"}`}
+            className={`rounded-full px-3 py-1.5 ${mode === "month" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
           >
             This Month
           </button>
           <button
             type="button"
             onClick={() => setMode("ytd")}
-            className={`rounded-full px-3 py-1 ${mode === "ytd" ? "bg-black text-white" : "text-zinc-700"}`}
+            className={`rounded-full px-3 py-1.5 ${mode === "ytd" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
           >
             YTD
           </button>
@@ -157,8 +160,8 @@ export function CostSummary() {
       </div>
 
       {mode === "month" ? (
-        <div className="mt-3">
-          <label htmlFor="month-picker" className="mb-1 block text-xs font-medium uppercase tracking-wide text-zinc-500">
+        <div className="mt-5">
+          <label htmlFor="month-picker" className="mb-1.5 block text-xs font-medium uppercase tracking-[0.22em] text-zinc-500">
             Select Month
           </label>
           <select
@@ -173,7 +176,7 @@ export function CostSummary() {
                 setSelectedMonth(option);
               }
             }}
-            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm"
+            className="rounded-2xl border border-[color:var(--line)] bg-white/80 px-4 py-2 text-sm text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
           >
             {monthOptions.map((option) => (
               <option key={`${option.year}-${option.month}`} value={`${option.year}-${option.month}`}>
@@ -184,13 +187,25 @@ export function CostSummary() {
         </div>
       ) : null}
 
-      <p className="mt-4 text-4xl font-semibold">{totalText}</p>
-      <p className="mt-1 text-sm text-zinc-600">{rangeLabel}</p>
-      <p className="mt-1 text-xs text-zinc-500">
+      <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div>
+          <p className="text-5xl font-semibold tracking-tight text-zinc-950 sm:text-6xl">{totalText}</p>
+          <p className="mt-2 text-base text-zinc-600">{rangeLabel}</p>
+        </div>
+
+        <div className="soft-panel rounded-[24px] p-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[color:var(--accent)]">Billing note</p>
+          <p className="mt-2 text-sm leading-6 text-zinc-700">
+            Summary follows provider-reported bucket dates so the dashboard stays consistent with synced usage records.
+          </p>
+        </div>
+      </div>
+
+      <p className="mt-4 text-xs text-zinc-500">
         Based on provider UTC bucket date (Timezone: {summary?.timeZone ?? "UTC"})
       </p>
 
-      {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
     </section>
   );
 }

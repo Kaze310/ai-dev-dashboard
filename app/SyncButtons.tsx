@@ -54,12 +54,12 @@ export function SyncButtons() {
 
   return (
     <div className="mt-4">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-3">
         <button
           type="button"
           onClick={() => void handleSync("openai")}
           disabled={isSyncing !== null}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+          className="rounded-full border border-[color:var(--line)] bg-white/75 px-4 py-2.5 text-sm font-medium text-zinc-800 shadow-sm disabled:opacity-50"
         >
           {isSyncing === "openai" ? "同步中..." : "Sync OpenAI"}
         </button>
@@ -68,7 +68,7 @@ export function SyncButtons() {
           type="button"
           onClick={() => void handleSync("anthropic")}
           disabled={isSyncing !== null}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+          className="rounded-full border border-[color:var(--line)] bg-white/75 px-4 py-2.5 text-sm font-medium text-zinc-800 shadow-sm disabled:opacity-50"
         >
           {isSyncing === "anthropic" ? "同步中..." : "Sync Anthropic"}
         </button>
@@ -77,13 +77,13 @@ export function SyncButtons() {
           type="button"
           onClick={() => void handleSync("all")}
           disabled={isSyncing !== null}
-          className="rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          className="rounded-full bg-[color:var(--foreground)] px-4 py-2.5 text-sm font-medium text-white shadow-sm disabled:opacity-50"
         >
           {isSyncing === "all" ? "同步中..." : "Sync All"}
         </button>
       </div>
 
-      {message ? <p className="mt-2 text-sm text-zinc-600">{message}</p> : null}
+      {message ? <p className="mt-3 text-sm text-zinc-700">{message}</p> : null}
     </div>
   );
 }

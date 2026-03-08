@@ -146,25 +146,34 @@ export function BudgetSection() {
 
   const hasOverLimit = alerts.some((item) => item.isOver);
   const bannerClass = hasOverLimit
-    ? "border-red-300 bg-red-50 text-red-800"
-    : "border-amber-300 bg-amber-50 text-amber-800";
+    ? "border-red-200 bg-red-50/90 text-red-800"
+    : "border-amber-200 bg-amber-50/90 text-amber-800";
 
   return (
-    <section className="mt-4 rounded-lg border border-zinc-200 p-5">
-      <h2 className="text-lg font-semibold">Budget Status</h2>
-      <p className="mt-1 text-sm text-zinc-600">Current month spend vs budget limit.</p>
+    <section className="glass-panel mt-5 rounded-[28px] p-6 sm:p-7">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="section-eyebrow">Budget Guardrails</p>
+          <h2 className="mt-2 text-xl font-semibold text-zinc-900">Budget Status</h2>
+          <p className="mt-2 text-sm text-zinc-600">Current month spend versus your configured limits.</p>
+        </div>
+
+        <div className="rounded-full bg-white/70 px-4 py-2 text-xs uppercase tracking-[0.2em] text-zinc-500 shadow-sm">
+          live from synced usage
+        </div>
+      </div>
 
       {loading ? <p className="mt-3 text-sm text-zinc-500">Loading budget...</p> : null}
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
       {!loading && !error && alerts.length > 0 ? (
-        <div className={`mt-4 rounded-md border px-3 py-2 text-sm ${bannerClass}`}>
+        <div className={`mt-5 rounded-2xl border px-4 py-3 text-sm shadow-sm ${bannerClass}`}>
           Alert: {alerts.map((item) => `${item.name} ${Math.round(item.percent)}%`).join(" · ")}
         </div>
       ) : null}
 
       {!loading && !error && hasAnyBar ? (
-        <div className="mt-4 space-y-3">
+        <div className="mt-5 grid gap-3">
           <BudgetBar
             title="Global Budget"
             currentCents={budget?.global?.current_month_cents ?? 0}
@@ -185,7 +194,9 @@ export function BudgetSection() {
       ) : null}
 
       {!loading && !error && !hasAnyBar ? (
-        <p className="mt-3 text-sm text-zinc-500">No budget set. Configure it from Settings.</p>
+        <div className="soft-panel mt-5 rounded-[24px] p-4 text-sm text-zinc-600">
+          No budget set yet. Configure global or provider-level limits from Settings.
+        </div>
       ) : null}
     </section>
   );

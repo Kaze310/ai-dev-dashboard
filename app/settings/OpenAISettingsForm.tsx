@@ -142,17 +142,24 @@ export function OpenAISettingsForm({
 
   const renderProviderCard = (name: ProviderName) => {
     const state = providers[name];
+    const accentClass =
+      name === "openai"
+        ? "from-[#ddebf6] to-[#f9fcff] text-[#195278]"
+        : "from-[#dff0eb] to-[#fbfdfb] text-[#21584a]";
 
     return (
-      <div key={name} className="rounded-lg border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">{providerLabel(name)} API Key</h2>
+      <div key={name} className="glass-panel rounded-[28px] p-6">
+        <div className={`inline-flex rounded-full bg-gradient-to-r px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] ${accentClass}`}>
+          {providerLabel(name)}
+        </div>
+        <h2 className="mt-4 text-xl font-semibold text-zinc-900">{providerLabel(name)} Access</h2>
         <p className="mt-1 text-sm text-zinc-600">
           {state.hasKey ? "已存在已保存的 key，可直接更新。" : "当前还没有保存 key。"}
         </p>
 
-        <div className="mt-4 space-y-3">
+        <div className="mt-5 space-y-4">
           <div>
-            <label htmlFor={`${name}-key`} className="mb-1 block text-sm font-medium">
+            <label htmlFor={`${name}-key`} className="mb-1.5 block text-sm font-medium text-zinc-800">
               API Key
             </label>
             <input
@@ -161,16 +168,16 @@ export function OpenAISettingsForm({
               value={state.apiKey}
               onChange={(event) => updateProvider(name, { apiKey: event.target.value })}
               placeholder={name === "openai" ? "sk-..." : "sk-ant-..."}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2"
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white/85 px-4 py-3 text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
             />
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3">
             <button
               type="button"
               onClick={() => void handleSave(name)}
               disabled={state.isSaving}
-              className="rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+              className="rounded-full bg-[color:var(--foreground)] px-4 py-2.5 text-sm font-medium text-white shadow-sm disabled:opacity-50"
             >
               {state.isSaving ? "保存中..." : "保存 API Key"}
             </button>
@@ -179,15 +186,15 @@ export function OpenAISettingsForm({
               type="button"
               onClick={() => void handleSync(name)}
               disabled={state.isSyncing}
-              className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50"
+              className="rounded-full border border-[color:var(--line)] bg-white/70 px-4 py-2.5 text-sm font-medium text-zinc-800 shadow-sm disabled:opacity-50"
             >
               {state.isSyncing ? "同步中..." : "Sync Now"}
             </button>
           </div>
         </div>
 
-        {state.saveMessage ? <p className="mt-3 text-sm">{state.saveMessage}</p> : null}
-        {state.syncMessage ? <p className="mt-2 text-sm">{state.syncMessage}</p> : null}
+        {state.saveMessage ? <p className="mt-4 text-sm text-zinc-700">{state.saveMessage}</p> : null}
+        {state.syncMessage ? <p className="mt-2 text-sm text-zinc-700">{state.syncMessage}</p> : null}
       </div>
     );
   };

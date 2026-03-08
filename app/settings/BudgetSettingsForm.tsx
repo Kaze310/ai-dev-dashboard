@@ -201,13 +201,14 @@ export function BudgetSettingsForm() {
 
   return (
     <section className="mt-8 space-y-6">
-      <div className="rounded-lg border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">Budget</h2>
+      <div className="glass-panel rounded-[28px] p-6">
+        <p className="section-eyebrow">Spending Controls</p>
+        <h2 className="mt-2 text-xl font-semibold text-zinc-900">Budget</h2>
         <p className="mt-1 text-sm text-zinc-600">Set monthly budget and alert threshold for global and each provider.</p>
 
-        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label htmlFor="global-limit" className="mb-1 block text-sm font-medium">
+            <label htmlFor="global-limit" className="mb-1.5 block text-sm font-medium text-zinc-800">
               Global Monthly Limit (USD)
             </label>
             <input
@@ -217,13 +218,13 @@ export function BudgetSettingsForm() {
               step="0.01"
               value={globalLimitUsd}
               onChange={(event) => setGlobalLimitUsd(event.target.value)}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2"
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white/85 px-4 py-3 text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
               placeholder="100.00"
             />
           </div>
 
           <div>
-            <label htmlFor="global-threshold" className="mb-1 block text-sm font-medium">
+            <label htmlFor="global-threshold" className="mb-1.5 block text-sm font-medium text-zinc-800">
               Alert Threshold (%)
             </label>
             <input
@@ -234,7 +235,7 @@ export function BudgetSettingsForm() {
               step="1"
               value={globalThreshold}
               onChange={(event) => setGlobalThreshold(normalizeThreshold(Number(event.target.value)))}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2"
+              className="w-full rounded-2xl border border-[color:var(--line)] bg-white/85 px-4 py-3 text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
             />
           </div>
         </div>
@@ -243,24 +244,29 @@ export function BudgetSettingsForm() {
           type="button"
           onClick={() => void saveGlobal()}
           disabled={globalSaving || loading}
-          className="mt-4 rounded-md bg-black px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+          className="mt-5 rounded-full bg-[color:var(--foreground)] px-4 py-2.5 text-sm font-medium text-white shadow-sm disabled:opacity-50"
         >
           {globalSaving ? "Saving..." : "Save Global Budget"}
         </button>
 
-        {globalMessage ? <p className="mt-2 text-sm text-zinc-600">{globalMessage}</p> : null}
+        {globalMessage ? <p className="mt-3 text-sm text-zinc-700">{globalMessage}</p> : null}
       </div>
 
       {providers.map((provider) => {
         const draft = providerDrafts[provider.id] ?? { limitUsd: "", threshold: 80 };
 
         return (
-          <div key={provider.id} className="rounded-lg border border-zinc-200 p-5">
-            <h3 className="text-base font-semibold">{providerLabel(provider.name)} Budget</h3>
+          <div key={provider.id} className="soft-panel rounded-[26px] p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-base font-semibold text-zinc-900">{providerLabel(provider.name)} Budget</h3>
+              <span className="rounded-full bg-white/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-zinc-500 shadow-sm">
+                per provider
+              </span>
+            </div>
 
             <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div>
-                <label htmlFor={`provider-limit-${provider.id}`} className="mb-1 block text-sm font-medium">
+                <label htmlFor={`provider-limit-${provider.id}`} className="mb-1.5 block text-sm font-medium text-zinc-800">
                   Monthly Limit (USD)
                 </label>
                 <input
@@ -275,13 +281,13 @@ export function BudgetSettingsForm() {
                       [provider.id]: { ...draft, limitUsd: event.target.value },
                     }))
                   }
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2"
+                  className="w-full rounded-2xl border border-[color:var(--line)] bg-white/85 px-4 py-3 text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
                   placeholder="Leave blank to unset"
                 />
               </div>
 
               <div>
-                <label htmlFor={`provider-threshold-${provider.id}`} className="mb-1 block text-sm font-medium">
+                <label htmlFor={`provider-threshold-${provider.id}`} className="mb-1.5 block text-sm font-medium text-zinc-800">
                   Alert Threshold (%)
                 </label>
                 <input
@@ -297,7 +303,7 @@ export function BudgetSettingsForm() {
                       [provider.id]: { ...draft, threshold: normalizeThreshold(Number(event.target.value)) },
                     }))
                   }
-                  className="w-full rounded-md border border-zinc-300 px-3 py-2"
+                  className="w-full rounded-2xl border border-[color:var(--line)] bg-white/85 px-4 py-3 text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
                 />
               </div>
             </div>
@@ -306,12 +312,12 @@ export function BudgetSettingsForm() {
               type="button"
               onClick={() => void saveProvider(provider.id)}
               disabled={providerSaving === provider.id || loading}
-              className="mt-4 rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium disabled:opacity-50"
+              className="mt-4 rounded-full border border-[color:var(--line)] bg-white/70 px-4 py-2.5 text-sm font-medium text-zinc-800 shadow-sm disabled:opacity-50"
             >
               {providerSaving === provider.id ? "Saving..." : `Save ${providerLabel(provider.name)} Budget`}
             </button>
 
-            {providerMessages[provider.id] ? <p className="mt-2 text-sm text-zinc-600">{providerMessages[provider.id]}</p> : null}
+            {providerMessages[provider.id] ? <p className="mt-3 text-sm text-zinc-700">{providerMessages[provider.id]}</p> : null}
           </div>
         );
       })}

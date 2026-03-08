@@ -2,60 +2,12 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
+import { getProviderName, toNumber, type UsageRecordRow } from "@/lib/usage-records";
 
 import { BudgetSection } from "./components/BudgetSection";
 import { DashboardCharts, type DailyCostPoint, type DailyTokenPoint, type ModelCostPoint } from "./components/DashboardCharts";
 import { SyncButtons } from "./SyncButtons";
 import { CostSummary } from "./components/CostSummary";
-
-type ProviderRef = {
-  name: string;
-};
-
-type UsageRecordRow = {
-  id: string;
-  date: string;
-  model: string;
-  input_tokens: number | string | null;
-  output_tokens: number | string | null;
-  cost_cents: number | string | null;
-  provider: ProviderRef | ProviderRef[] | null;
-};
-
-function toNumber(value: number | string | null | undefined): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
-}
-
-function formatDate(dateString: string) {
-  return new Date(`${dateString}T00:00:00.000Z`).toLocaleDateString("en-US", {
-    timeZone: "UTC",
-  });
-}
-
-function formatCost(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
-function getProviderName(provider: UsageRecordRow["provider"]) {
-  if (!provider) {
-    return "unknown";
-  }
-
-  if (Array.isArray(provider)) {
-    return provider[0]?.name ?? "unknown";
-  }
-
-  return provider.name;
-}
 
 function normalizeDateKey(value: unknown) {
   // 兼容 YYYY-MM-DD、ISO datetime、Date 对象，统一聚合键为 YYYY-MM-DD。
@@ -207,31 +159,16 @@ export default async function Home() {
 
   const { start: chartStart, endExclusive: chartEndExclusive } = getLast30DaysRange();
 
-  const [{ data: usageRecords, error }, { data: chartRows, error: chartError }] = await Promise.all([
-      supabase
-        .from("usage_records")
-        .select("id, date, model, input_tokens, output_tokens, cost_cents, provider:providers(name)")
-        .eq("user_id", user.id)
-        .order("date", { ascending: false })
-        .order("created_at", { ascending: false })
-        .limit(50),
-      supabase
-        .from("usage_records")
-        .select("id, date, model, input_tokens, output_tokens, cost_cents, provider:providers(name)")
-        .eq("user_id", user.id)
-        .gte("date", chartStart)
-        .lt("date", chartEndExclusive),
-    ]);
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  const { data: chartRows, error: chartError } = await supabase
+    .from("usage_records")
+    .select("id, date, model, input_tokens, output_tokens, cost_cents, provider:providers(name)")
+    .eq("user_id", user.id)
+    .gte("date", chartStart)
+    .lt("date", chartEndExclusive);
 
   if (chartError) {
     throw new Error(chartError.message);
   }
-
-  const rows = (usageRecords ?? []) as UsageRecordRow[];
 
   const { dailyCostTrend, dailyTokenUsage, costByModel } = aggregateChartData(
     (chartRows ?? []) as UsageRecordRow[],
@@ -240,66 +177,74 @@ export default async function Home() {
   );
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-16">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-4xl font-semibold">AI Dev Dashboard</h1>
-          <p className="mt-3 text-lg text-zinc-700">Signed in as: {user.email}</p>
-        </div>
+    <main className="mx-auto flex min-h-screen w-full max-w-6xl flex-col px-5 py-10 sm:px-6 sm:py-14">
+      <section className="glass-panel relative overflow-hidden rounded-[34px] px-6 py-7 sm:px-8 sm:py-9">
+        <div className="absolute right-0 top-0 h-44 w-44 rounded-full bg-[#d8ece7] blur-3xl" />
+        <div className="absolute bottom-0 left-8 h-28 w-28 rounded-full bg-[#ead6a6]/40 blur-3xl" />
 
-        <Link href="/settings" className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium">
-          Settings
-        </Link>
-      </div>
+        <div className="relative flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
+          <div className="max-w-2xl">
+            <p className="section-eyebrow">Unified Spend Intelligence</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-zinc-950 sm:text-5xl">
+              AI Dev Dashboard
+            </h1>
+            <p className="mt-4 max-w-xl text-base leading-7 text-zinc-700 sm:text-lg">
+              Track OpenAI and Anthropic usage in one quiet, readable workspace with budgets, alerts, and model-level visibility.
+            </p>
+          </div>
+
+          <div className="relative flex flex-col gap-3 sm:items-end">
+            <div className="rounded-[24px] border border-white/70 bg-white/72 px-5 py-4 shadow-sm backdrop-blur">
+              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Signed in as</p>
+              <p className="mt-2 text-sm font-medium text-zinc-900">{user.email}</p>
+            </div>
+
+            <Link
+              href="/settings"
+              className="inline-flex items-center rounded-full bg-[color:var(--foreground)] px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:-translate-y-0.5"
+            >
+              Open Settings
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="glass-panel mt-5 rounded-[28px] p-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="section-eyebrow">Refresh</p>
+            <h2 className="mt-2 text-lg font-semibold text-zinc-900">Manual Sync</h2>
+            <p className="mt-1 text-sm text-zinc-600">Pull the latest usage data from OpenAI and Anthropic on demand.</p>
+          </div>
+
+          <div className="rounded-full bg-white/70 px-4 py-2 text-xs uppercase tracking-[0.2em] text-zinc-500 shadow-sm">
+            provider APIs only
+          </div>
+        </div>
+        <SyncButtons />
+      </section>
 
       <CostSummary />
       <BudgetSection />
 
-      <section className="mt-4 rounded-lg border border-zinc-200 p-5">
-        <h2 className="text-lg font-semibold">Manual Sync</h2>
-        <p className="mt-1 text-sm text-zinc-600">手动同步 OpenAI 与 Anthropic 最新 usage 数据。</p>
-        <SyncButtons />
-      </section>
-
       <DashboardCharts dailyCostTrend={dailyCostTrend} costByModel={costByModel} dailyTokenUsage={dailyTokenUsage} />
 
-      <section className="mt-10">
-        <h2 className="text-xl font-semibold">Recent Usage</h2>
-        <p className="mt-1 text-sm text-zinc-600">日期按 provider 返回的 UTC bucket date 展示。</p>
+      <section className="glass-panel mt-10 rounded-[30px] p-6 sm:p-7">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="max-w-2xl">
+            <p className="section-eyebrow">Records</p>
+            <h2 className="mt-2 text-2xl font-semibold text-zinc-900">Raw usage now lives on its own page</h2>
+            <p className="mt-3 text-sm leading-6 text-zinc-600">
+              The dashboard stays focused on spend, budget status, and trends. Open the dedicated records view only when you need row-level inspection.
+            </p>
+          </div>
 
-        <div className="mt-4 overflow-x-auto rounded-lg border border-zinc-200">
-          <table className="min-w-full text-left text-sm">
-            <thead className="bg-zinc-50 text-zinc-600">
-              <tr>
-                <th className="px-4 py-3 font-medium">Date (UTC bucket)</th>
-                <th className="px-4 py-3 font-medium">Provider</th>
-                <th className="px-4 py-3 font-medium">Model</th>
-                <th className="px-4 py-3 font-medium">Input Tokens</th>
-                <th className="px-4 py-3 font-medium">Output Tokens</th>
-                <th className="px-4 py-3 font-medium">Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-6 text-zinc-500" colSpan={6}>
-                    暂无 usage 数据。先到 Settings 保存 OpenAI / Anthropic key，再执行同步。
-                  </td>
-                </tr>
-              ) : (
-                rows.map((row) => (
-                  <tr key={row.id} className="border-t border-zinc-200">
-                    <td className="px-4 py-3">{formatDate(row.date)}</td>
-                    <td className="px-4 py-3">{getProviderName(row.provider)}</td>
-                    <td className="px-4 py-3">{row.model}</td>
-                    <td className="px-4 py-3">{toNumber(row.input_tokens).toLocaleString()}</td>
-                    <td className="px-4 py-3">{toNumber(row.output_tokens).toLocaleString()}</td>
-                    <td className="px-4 py-3">{formatCost(toNumber(row.cost_cents))}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <Link
+            href="/records"
+            className="inline-flex items-center justify-center rounded-full bg-[color:var(--foreground)] px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:-translate-y-0.5"
+          >
+            Open Records
+          </Link>
         </div>
       </section>
     </main>
