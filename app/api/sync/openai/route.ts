@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { decryptApiKey } from "@/lib/crypto/api-keys";
 import { fetchOpenAIUsage } from "@/lib/providers/openai";
 import { createClient } from "@/lib/supabase/server";
 
@@ -61,7 +62,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const usage = await fetchOpenAIUsage(provider.api_key_encrypted, startDate, endDate);
+    const decryptedApiKey = decryptApiKey(provider.api_key_encrypted);
+    const usage = await fetchOpenAIUsage(decryptedApiKey, startDate, endDate);
 
     if (usage.length === 0) {
       return NextResponse.json({ synced: 0, errors: [] });

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { encryptApiKey } from "@/lib/crypto/api-keys";
 import { createClient } from "@/lib/supabase/server";
 
 type SaveOpenAIKeyBody = {
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
   if (!apiKey) {
     return NextResponse.json({ error: "apiKey is required" }, { status: 400 });
   }
+  const encryptedApiKey = encryptApiKey(apiKey);
 
   // 先查有没有记录，再决定 update 还是 insert，逻辑更直观。
   const { data: existing, error: queryError } = await supabase
@@ -45,7 +47,7 @@ export async function POST(request: Request) {
     // 已有记录就更新 key。
     const { error: updateError } = await supabase
       .from("providers")
-      .update({ api_key_encrypted: apiKey })
+      .update({ api_key_encrypted: encryptedApiKey })
       .eq("id", existing.id)
       .eq("user_id", user.id);
 
@@ -60,7 +62,7 @@ export async function POST(request: Request) {
     // 没有记录就新建一条 openai provider。
     user_id: user.id,
     name: "openai",
-    api_key_encrypted: apiKey,
+    api_key_encrypted: encryptedApiKey,
   });
 
   if (insertError) {

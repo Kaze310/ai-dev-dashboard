@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { encryptApiKey } from "@/lib/crypto/api-keys";
 import { createClient } from "@/lib/supabase/server";
 
 type SaveAnthropicKeyBody = {
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
   if (!apiKey) {
     return NextResponse.json({ error: "apiKey is required" }, { status: 400 });
   }
+  const encryptedApiKey = encryptApiKey(apiKey);
 
   const { data: existing, error: queryError } = await supabase
     .from("providers")
@@ -43,7 +45,7 @@ export async function POST(request: Request) {
   if (existing?.id) {
     const { error: updateError } = await supabase
       .from("providers")
-      .update({ api_key_encrypted: apiKey })
+      .update({ api_key_encrypted: encryptedApiKey })
       .eq("id", existing.id)
       .eq("user_id", user.id);
 
@@ -57,7 +59,7 @@ export async function POST(request: Request) {
   const { error: insertError } = await supabase.from("providers").insert({
     user_id: user.id,
     name: "anthropic",
-    api_key_encrypted: apiKey,
+    api_key_encrypted: encryptedApiKey,
   });
 
   if (insertError) {

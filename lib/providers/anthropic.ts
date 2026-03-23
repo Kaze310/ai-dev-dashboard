@@ -308,6 +308,7 @@ export async function fetchAnthropicUsage(
   startDate: string,
   endDate: string,
 ): Promise<AnthropicUsageRecord[]> {
+  // 这里要求调用方传入已经解密后的 API key；provider 层本身不直接访问数据库。
   const startIso = toIsoStart(startDate);
   const endIso = toIsoEndExclusive(endDate);
 
