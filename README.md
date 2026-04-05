@@ -1,15 +1,24 @@
 # AI Dev Dashboard
 
+`Tech Stack: Next.js / TypeScript / Supabase / Recharts / Vercel`
+
 A unified API spend monitoring dashboard for AI developers, bringing usage and cost data from providers like OpenAI and Anthropic into one place.
+
+![dashboard](./screenshots/dashboard.png)
+
+![budget](./screenshots/budget.png)
+
+![chart](./screenshots/chart.png)
+
+![settings](./screenshots/settings.png)
 
 ## Project Goal
 When you use multiple AI APIs at the same time, you should not need to log into each provider separately to check billing and usage. This dashboard gives you one place for unified visibility, budget management, and basic alerts.
 
 ## Problems It Solves
-- Cost and usage data are scattered across multiple provider dashboards
-- Monthly spend is easy to lose track of and can quietly exceed budget
-- There is no single view for provider-level and model-level trends
-- API key management and sync workflows are fragmented and repetitive
+- Pulls fragmented OpenAI and Anthropic spend into one dashboard
+- Makes monthly spend and budget drift visible earlier
+- Gives a clearer provider-level and model-level view of usage patterns
 
 ## Core Features
 1. **Multi-provider data aggregation**
@@ -34,6 +43,20 @@ When you use multiple AI APIs at the same time, you should not need to log into 
 6. **Raw record inspection**
    - Dedicated Records page for recently synced usage rows
 
+## Architecture Highlights
+
+### RLS row isolation
+Supabase Row Level Security keeps every user's providers, budgets, and usage records scoped to their own account. The app can rely on the database layer for isolation instead of duplicating access rules throughout the UI.
+
+### AES-256-GCM key encryption
+Provider API keys are encrypted before they are written to the database and decrypted only on the server when a sync runs. This keeps sensitive provider credentials out of plaintext storage while staying simple enough for a solo project on Vercel.
+
+### Upsert idempotent sync
+Sync routes are designed to be safe to run repeatedly by upserting normalized usage rows instead of blindly inserting duplicates. That keeps manual re-syncing practical when validating provider data or catching up after API delays.
+
+### Model name canonicalization
+Provider responses are inconsistent about model names, aggregation rows, and billing labels, so the sync pipeline normalizes those values before storing and charting them. This makes the dashboard totals and model comparisons much more stable across OpenAI and Anthropic.
+
 ## Tech Stack
 - **Frontend:** Next.js 16 (App Router) + TypeScript + Tailwind CSS 4 + Recharts
 - **Backend / Database:** Supabase (PostgreSQL + Auth + Row Level Security)
@@ -55,10 +78,10 @@ When you use multiple AI APIs at the same time, you should not need to log into 
 10. Light-theme UI redesign
 11. Vercel production deployment
 
-### Not Yet Done
-- More advanced records filtering / search
-- Automated scheduled sync
-- More complete test coverage
+### Roadmap
+- Add more advanced records filtering and search
+- Support automated scheduled sync
+- Expand automated test coverage around provider parsing and sync flows
 
 ## Local Development
 
@@ -122,7 +145,6 @@ If your local or remote database does not yet include the latest schema changes,
 ## Known Limitations
 - `usage_records.date` uses the provider's UTC bucket date, so it may differ by one day from the user's local calendar date
 - Anthropic same-day data may appear later than the Anthropic console and may require syncing again later or the next day
-- In Next.js 16, `middleware.ts` is deprecated and should eventually be migrated to `proxy`
 
 ## Project Boundaries
 - No real-time streaming monitoring
