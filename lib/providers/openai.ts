@@ -1,10 +1,7 @@
-export type OpenAIUsageRecord = {
-  date: string;
-  model: string;
-  input_tokens: number;
-  output_tokens: number;
-  cost_cents: number;
-};
+import { isObject, normalizeModel, toNumber, buildDateModelKey } from "@/lib/normalize";
+import { allocateCosts, type ProviderUsageRecord } from "@/lib/providers/shared";
+
+export type OpenAIUsageRecord = ProviderUsageRecord;
 
 type UsageApiResponse = {
   data?: unknown[];
@@ -17,23 +14,6 @@ const MAX_DAYS_PER_REQUEST = 31;
 const DAY_SECONDS = 24 * 60 * 60;
 const MAX_PAGE_LIMIT = 31;
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function normalizeModel(value: unknown): string {
-  if (typeof value !== "string") {
-    return "unknown";
-  }
-
-  const normalized = value.trim();
-  if (!normalized || normalized === "null" || normalized === "undefined") {
-    return "unknown";
-  }
-
-  return normalized;
-}
-
 function isValidModelValue(value: unknown): value is string {
   if (typeof value !== "string") {
     return false;
@@ -41,19 +21,6 @@ function isValidModelValue(value: unknown): value is string {
 
   const normalized = value.trim();
   return normalized !== "" && normalized !== "null" && normalized !== "undefined";
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
 }
 
 function unixSecondsToDateString(unixSeconds: number): string {
@@ -66,33 +33,29 @@ function dateToStartUnixSeconds(dateString: string): number {
 }
 
 function dateToEndUnixSecondsExclusive(dateString: string): number {
-  // end_time 用“次日 00:00:00（不含）”，这样可以覆盖 endDate 当天完整 24 小时。
+  // end_time 用“次日 00:00:00(不含)”,覆盖 endDate 当天完整 24 小时。
   const date = new Date(`${dateString}T00:00:00.000Z`);
   date.setUTCDate(date.getUTCDate() + 1);
   return Math.floor(date.getTime() / 1000);
 }
 
-function buildCostKey(date: string, model: string): string {
-  return `${date}|${model}`;
-}
-
-function stripModelDateSuffix(model: string): string {
+export function stripModelDateSuffix(model: string): string {
   return model.replace(/-(20\d{2}-\d{2}-\d{2})$/, "");
 }
 
-function canonicalizeUsageModel(model: string): string {
+export function canonicalizeUsageModel(model: string): string {
   return stripModelDateSuffix(model.toLowerCase());
 }
 
-function canonicalizeCostLineItem(lineItem: string): string {
+export function canonicalizeCostLineItem(lineItem: string): string {
   const normalized = lineItem.trim().toLowerCase();
 
-  // 常见 line_item 会带 input/output 等后缀，先剥离。
+  // 常见 line_item 会带 input/output 等后缀,先剥离。
   const withoutSuffix = normalized
     .replace(/\s+(input|output|cached_input|cached_output|cached input|cached output)$/i, "")
     .replace(/\s*\((input|output|cached_input|cached_output|cached input|cached output)\)$/i, "");
 
-  // 提取以 gpt-/o1/o3/o4 开头的模型 token；找不到就回退原值。
+  // 提取以 gpt-/o1/o3/o4 开头的模型 token;找不到就回退原值。
   const match = withoutSuffix.match(/(gpt-[a-z0-9.-]+|o[0-9]+(?:-[a-z0-9.-]+)?)/i);
   const token = match ? match[1] : withoutSuffix.split(/\s+/)[0] ?? withoutSuffix;
 
@@ -101,7 +64,13 @@ function canonicalizeCostLineItem(lineItem: string): string {
 
 function parseBucket(bucket: Record<string, unknown>): OpenAIUsageRecord[] {
   const bucketStart = toNumber(bucket.start_time);
-  const date = unixSecondsToDateString(bucketStart || Math.floor(Date.now() / 1000));
+
+  // start_time 缺失时不再 fallback 到“今天”——那等于给数据安错日期。直接跳过。
+  if (bucketStart <= 0) {
+    return [];
+  }
+
+  const date = unixSecondsToDateString(bucketStart);
 
   if (!Array.isArray(bucket.results)) {
     return [];
@@ -109,10 +78,9 @@ function parseBucket(bucket: Record<string, unknown>): OpenAIUsageRecord[] {
 
   return bucket.results
     .filter(isObject)
-    // 过滤聚合/脏数据行：只保留明确字符串模型名。
+    // 过滤聚合/脏数据行:只保留明确字符串模型名。
     .filter((result) => isValidModelValue(result.model))
     .map((result) => {
-      // 官方 usage/completions 里常见字段：input_tokens、output_tokens、model。
       const inputTokens = toNumber(result.input_tokens);
       const outputTokens = toNumber(result.output_tokens);
 
@@ -121,7 +89,7 @@ function parseBucket(bucket: Record<string, unknown>): OpenAIUsageRecord[] {
         model: normalizeModel(result.model),
         input_tokens: Math.max(0, Math.round(inputTokens)),
         output_tokens: Math.max(0, Math.round(outputTokens)),
-        // 花费由 /organization/costs 单独提供，先初始化为 0，后续再合并。
+        // 花费由 /organization/costs 单独提供,先初始化为 0,后续合并。
         cost_cents: 0,
       };
     });
@@ -142,7 +110,7 @@ async function fetchUsageRange(
       bucket_width: "1d",
       limit: String(MAX_PAGE_LIMIT),
     });
-    // 关键修复：让 usage 按 model 聚合，否则 model 可能是 null。
+    // 让 usage 按 model 聚合,否则 model 可能是 null。
     params.append("group_by[]", "model");
 
     if (page) {
@@ -196,7 +164,7 @@ async function fetchCostsRange(
   startTime: number,
   endTime: number,
 ): Promise<Map<string, number>> {
-  // 这里的 map value 用 USD 浮点累加，最后分配给记录时再统一换算成 cents。
+  // OpenAI costs 的 amount.value 单位是 USD(已对照官方文档),这里转成 cents 累加。
   const costMap = new Map<string, number>();
   let page: string | undefined;
 
@@ -237,25 +205,28 @@ async function fetchCostsRange(
       }
 
       const bucketStart = toNumber(bucket.start_time);
-      const date = unixSecondsToDateString(bucketStart || Math.floor(Date.now() / 1000));
+      if (bucketStart <= 0) {
+        continue;
+      }
+      const date = unixSecondsToDateString(bucketStart);
 
       for (const result of bucket.results) {
         if (!isObject(result)) {
           continue;
         }
 
-        const model = normalizeModel(result.line_item);
-        if (model === "unknown") {
+        const lineItem = normalizeModel(result.line_item);
+        if (lineItem === "unknown") {
           continue;
         }
 
-        const canonicalModel = canonicalizeCostLineItem(model);
+        const canonicalModel = canonicalizeCostLineItem(lineItem);
         const amount = isObject(result.amount) ? result.amount : {};
         const usd = Math.max(0, toNumber(amount.value));
 
-        const key = buildCostKey(date, canonicalModel);
+        const key = buildDateModelKey(date, canonicalModel);
         const previous = costMap.get(key) ?? 0;
-        costMap.set(key, previous + usd);
+        costMap.set(key, previous + usd * 100);
       }
     }
 
@@ -316,7 +287,7 @@ export async function fetchOpenAIUsage(
   startDate: string,
   endDate: string,
 ): Promise<OpenAIUsageRecord[]> {
-  // 这里要求调用方传入已经解密后的 API key；provider 层本身不直接访问数据库。
+  // 调用方传入已解密的 API key;provider 层不访问数据库。
   const startTime = dateToStartUnixSeconds(startDate);
   const endTime = dateToEndUnixSecondsExclusive(endDate);
 
@@ -332,72 +303,52 @@ export async function fetchOpenAIUsage(
     allRecords.push(...partial);
   }
 
-  const costMap = await fetchOpenAICosts(apiKey, startDate, endDate);
-  const costByRecordIndex = new Map<number, number>();
-  const groups = new Map<string, number[]>();
+  const costMapCents = await fetchOpenAICosts(apiKey, startDate, endDate);
 
-  // 先按“日期 + 规范化模型名”分组。
-  allRecords.forEach((record, index) => {
-    const canonicalModel = canonicalizeUsageModel(record.model);
-    const groupKey = buildCostKey(record.date, canonicalModel);
-    const existing = groups.get(groupKey) ?? [];
-    existing.push(index);
-    groups.set(groupKey, existing);
+  return allocateCosts(allRecords, costMapCents, canonicalizeUsageModel);
+}
+
+/**
+ * 保存 key 时做一次轻量验证:拉 1 天 usage。
+ * 在保存时就区分“key 无效”(401)与“不是 admin key / 权限不足”(403),
+ * 而不是等到 sync 才失败。
+ */
+export async function verifyOpenAIAdminKey(apiKey: string): Promise<{ ok: boolean; message?: string }> {
+  const end = Math.floor(Date.now() / 1000);
+  const start = end - DAY_SECONDS;
+
+  const params = new URLSearchParams({
+    start_time: String(start),
+    end_time: String(end),
+    bucket_width: "1d",
+    limit: "1",
   });
 
-  // 按组分配成本：单条就全给；多条则按 token 占比分摊，避免重复记账。
-  for (const [groupKey, recordIndexes] of groups.entries()) {
-    const groupCostUsd = costMap.get(groupKey) ?? 0;
-    if (groupCostUsd <= 0) {
-      continue;
-    }
+  const response = await fetch(
+    `${OPENAI_BASE_URL}/v1/organization/usage/completions?${params.toString()}`,
+    {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+      cache: "no-store",
+    },
+  );
 
-    if (recordIndexes.length === 1) {
-      costByRecordIndex.set(recordIndexes[0], Math.max(0, Math.round(groupCostUsd * 100)));
-      continue;
-    }
-
-    const tokens = recordIndexes.map((idx) => {
-      const record = allRecords[idx];
-      return Math.max(0, record.input_tokens + record.output_tokens);
-    });
-    const totalTokens = tokens.reduce((sum, value) => sum + value, 0);
-    const totalGroupCents = Math.max(0, Math.round(groupCostUsd * 100));
-
-    if (totalTokens <= 0) {
-      const equalShareUsd = groupCostUsd / recordIndexes.length;
-      let assigned = 0;
-      for (let i = 0; i < recordIndexes.length; i += 1) {
-        const idx = recordIndexes[i];
-        if (i === recordIndexes.length - 1) {
-          costByRecordIndex.set(idx, Math.max(0, totalGroupCents - assigned));
-          continue;
-        }
-
-        const shareCents = Math.max(0, Math.round(equalShareUsd * 100));
-        costByRecordIndex.set(idx, shareCents);
-        assigned += shareCents;
-      }
-      continue;
-    }
-
-    let assignedCents = 0;
-    for (let i = 0; i < recordIndexes.length; i += 1) {
-      const idx = recordIndexes[i];
-      if (i === recordIndexes.length - 1) {
-        costByRecordIndex.set(idx, Math.max(0, totalGroupCents - assignedCents));
-        continue;
-      }
-
-      const shareUsd = (tokens[i] / totalTokens) * groupCostUsd;
-      const shareCents = Math.max(0, Math.round(shareUsd * 100));
-      costByRecordIndex.set(idx, shareCents);
-      assignedCents += shareCents;
-    }
+  if (response.ok) {
+    return { ok: true };
   }
 
-  return allRecords.map((record, index) => ({
-    ...record,
-    cost_cents: costByRecordIndex.get(index) ?? 0,
-  }));
+  if (response.status === 401) {
+    return { ok: false, message: "OpenAI rejected the key (401): the API key is invalid." };
+  }
+
+  if (response.status === 403) {
+    return {
+      ok: false,
+      message:
+        "OpenAI rejected the key (403): the key is valid but lacks org-level usage permissions. An Admin API key is required.",
+    };
+  }
+
+  const text = await response.text();
+  return { ok: false, message: `OpenAI key verification failed (${response.status}): ${text.slice(0, 300)}` };
 }

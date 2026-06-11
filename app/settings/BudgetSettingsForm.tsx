@@ -31,26 +31,37 @@ function centsToUsdInput(cents: number | null | undefined): string {
   return (cents / 100).toFixed(2);
 }
 
-function usdInputToCents(value: string): number | null {
+// 空 = 清除;非法(负数、非数字)= invalid,客户端直接拒绝,不发请求。
+// 此前非法输入会被当成 null 发出去,服务端再把 null 当“清除预算”。
+function usdInputToCents(value: string): { kind: "clear" } | { kind: "value"; cents: number } | { kind: "invalid" } {
   const trimmed = value.trim();
   if (!trimmed) {
-    return null;
+    return { kind: "clear" };
   }
 
   const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
+    return { kind: "invalid" };
   }
 
-  return Math.round(parsed * 100);
+  return { kind: "value", cents: Math.round(parsed * 100) };
 }
 
-function normalizeThreshold(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 80;
+// threshold 输入框保留原始字符串,保存时校验。
+// 非法(空、非数字、超出 1-100)= invalid,直接拒绝并提示,
+// 不再静默修正(此前 101→100、空→80,用户毫无感知)。
+function parseThresholdInput(value: string): { kind: "value"; pct: number } | { kind: "invalid" } {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return { kind: "invalid" };
   }
 
-  return Math.min(100, Math.max(1, Math.round(value)));
+  const parsed = Math.round(Number(trimmed));
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 100) {
+    return { kind: "invalid" };
+  }
+
+  return { kind: "value", pct: parsed };
 }
 
 function providerLabel(name: string) {
@@ -68,12 +79,12 @@ function providerLabel(name: string) {
 export function BudgetSettingsForm() {
   const [loading, setLoading] = useState(true);
   const [globalLimitUsd, setGlobalLimitUsd] = useState("");
-  const [globalThreshold, setGlobalThreshold] = useState(80);
+  const [globalThreshold, setGlobalThreshold] = useState("80");
   const [globalSaving, setGlobalSaving] = useState(false);
   const [globalMessage, setGlobalMessage] = useState("");
 
   const [providers, setProviders] = useState<ProviderBudget[]>([]);
-  const [providerDrafts, setProviderDrafts] = useState<Record<string, { limitUsd: string; threshold: number }>>({});
+  const [providerDrafts, setProviderDrafts] = useState<Record<string, { limitUsd: string; threshold: string }>>({});
   const [providerSaving, setProviderSaving] = useState<string | null>(null);
   const [providerMessages, setProviderMessages] = useState<Record<string, string>>({});
 
@@ -99,14 +110,14 @@ export function BudgetSettingsForm() {
         }
 
         setGlobalLimitUsd(centsToUsdInput(result.global?.monthly_limit_cents));
-        setGlobalThreshold(result.global?.alert_threshold_pct ?? 80);
+        setGlobalThreshold(String(result.global?.alert_threshold_pct ?? 80));
         setProviders(result.providers ?? []);
 
-        const initialDrafts: Record<string, { limitUsd: string; threshold: number }> = {};
+        const initialDrafts: Record<string, { limitUsd: string; threshold: string }> = {};
         (result.providers ?? []).forEach((provider) => {
           initialDrafts[provider.id] = {
             limitUsd: centsToUsdInput(provider.monthly_limit_cents),
-            threshold: provider.alert_threshold_pct ?? 80,
+            threshold: String(provider.alert_threshold_pct ?? 80),
           };
         });
         setProviderDrafts(initialDrafts);
@@ -130,10 +141,19 @@ export function BudgetSettingsForm() {
     setGlobalSaving(true);
     setGlobalMessage("");
 
-    const limitCents = usdInputToCents(globalLimitUsd);
-    if (!limitCents) {
+    // 空输入 = 清除全局预算(与 provider 级行为一致);非法输入直接拒绝。
+    const limitParse = usdInputToCents(globalLimitUsd);
+    if (limitParse.kind === "invalid") {
       setGlobalSaving(false);
-      setGlobalMessage("Please enter a valid monthly budget in USD.");
+      setGlobalMessage("Please enter a valid positive USD amount, or leave blank to clear.");
+      return;
+    }
+    const limitCents = limitParse.kind === "value" ? limitParse.cents : null;
+
+    const thresholdParse = parseThresholdInput(globalThreshold);
+    if (thresholdParse.kind === "invalid") {
+      setGlobalSaving(false);
+      setGlobalMessage("Alert threshold must be a number between 1 and 100.");
       return;
     }
 
@@ -145,7 +165,7 @@ export function BudgetSettingsForm() {
         },
         body: JSON.stringify({
           monthly_limit_cents: limitCents,
-          alert_threshold_pct: normalizeThreshold(globalThreshold),
+          alert_threshold_pct: thresholdParse.pct,
         }),
       });
 
@@ -155,7 +175,7 @@ export function BudgetSettingsForm() {
         return;
       }
 
-      setGlobalMessage("Global budget saved.");
+      setGlobalMessage(limitCents === null ? "Global budget cleared." : "Global budget saved.");
     } catch (error) {
       setGlobalMessage(error instanceof Error ? error.message : "Failed to save global budget");
     } finally {
@@ -168,7 +188,26 @@ export function BudgetSettingsForm() {
     setProviderMessages((prev) => ({ ...prev, [providerId]: "" }));
 
     const draft = providerDrafts[providerId];
-    const limitCents = usdInputToCents(draft?.limitUsd ?? "");
+    const limitParse = usdInputToCents(draft?.limitUsd ?? "");
+    if (limitParse.kind === "invalid") {
+      setProviderSaving(null);
+      setProviderMessages((prev) => ({
+        ...prev,
+        [providerId]: "Please enter a valid positive USD amount, or leave blank to clear.",
+      }));
+      return;
+    }
+    const limitCents = limitParse.kind === "value" ? limitParse.cents : null;
+
+    const thresholdParse = parseThresholdInput(draft?.threshold ?? "");
+    if (thresholdParse.kind === "invalid") {
+      setProviderSaving(null);
+      setProviderMessages((prev) => ({
+        ...prev,
+        [providerId]: "Alert threshold must be a number between 1 and 100.",
+      }));
+      return;
+    }
 
     try {
       const response = await fetch(`/api/budget/${providerId}`, {
@@ -178,7 +217,7 @@ export function BudgetSettingsForm() {
         },
         body: JSON.stringify({
           monthly_limit_cents: limitCents,
-          alert_threshold_pct: normalizeThreshold(draft?.threshold ?? 80),
+          alert_threshold_pct: thresholdParse.pct,
         }),
       });
 
@@ -219,7 +258,7 @@ export function BudgetSettingsForm() {
               value={globalLimitUsd}
               onChange={(event) => setGlobalLimitUsd(event.target.value)}
               className="w-full rounded-2xl border border-[color:var(--line)] bg-white/85 px-4 py-3 text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
-              placeholder="100.00"
+              placeholder="100.00 (leave blank to clear)"
             />
           </div>
 
@@ -234,7 +273,7 @@ export function BudgetSettingsForm() {
               max="100"
               step="1"
               value={globalThreshold}
-              onChange={(event) => setGlobalThreshold(normalizeThreshold(Number(event.target.value)))}
+              onChange={(event) => setGlobalThreshold(event.target.value)}
               className="w-full rounded-2xl border border-[color:var(--line)] bg-white/85 px-4 py-3 text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"
             />
           </div>
@@ -253,7 +292,7 @@ export function BudgetSettingsForm() {
       </div>
 
       {providers.map((provider) => {
-        const draft = providerDrafts[provider.id] ?? { limitUsd: "", threshold: 80 };
+        const draft = providerDrafts[provider.id] ?? { limitUsd: "", threshold: "80" };
 
         return (
           <div key={provider.id} className="soft-panel rounded-[26px] p-5">
@@ -300,7 +339,7 @@ export function BudgetSettingsForm() {
                   onChange={(event) =>
                     setProviderDrafts((prev) => ({
                       ...prev,
-                      [provider.id]: { ...draft, threshold: normalizeThreshold(Number(event.target.value)) },
+                      [provider.id]: { ...draft, threshold: event.target.value },
                     }))
                   }
                   className="w-full rounded-2xl border border-[color:var(--line)] bg-white/85 px-4 py-3 text-zinc-800 shadow-sm outline-none focus:border-[color:var(--accent)] focus:ring-2 focus:ring-[color:var(--accent-soft)]"

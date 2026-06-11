@@ -38,5 +38,7 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  // 排除 /api:route handler 自己会 getUser(并能在需要时刷新 cookie),
+  // 此前 middleware + route 每个 API 请求做两次 Supabase auth 往返。
+  matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

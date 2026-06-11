@@ -1,22 +1,30 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { getBudgetData, type BudgetData } from "@/lib/budget-data";
+import { toNumber } from "@/lib/normalize";
 import { createClient } from "@/lib/supabase/server";
-import { getProviderName, toNumber, type UsageRecordRow } from "@/lib/usage-records";
 
 import { BudgetSection } from "./components/BudgetSection";
 import { DashboardCharts, type DailyCostPoint, type DailyTokenPoint, type ModelCostPoint } from "./components/DashboardCharts";
 import { SyncButtons } from "./SyncButtons";
 import { CostSummary } from "./components/CostSummary";
 
+// usage_daily_model_aggregates RPC 的返回行:已在数据库端按
+// (date, provider, model) 聚合,避开 PostgREST 1000 行截断。
+type ChartAggregateRow = {
+  date: string;
+  provider_name: string;
+  model: string;
+  input_tokens: number | string | null;
+  output_tokens: number | string | null;
+  cost_cents: number | string | null;
+};
+
 function normalizeDateKey(value: unknown) {
-  // 兼容 YYYY-MM-DD、ISO datetime、Date 对象，统一聚合键为 YYYY-MM-DD。
+  // 兼容 YYYY-MM-DD、ISO datetime,统一聚合键为 YYYY-MM-DD。
   if (typeof value === "string") {
     return value.slice(0, 10);
-  }
-
-  if (value instanceof Date) {
-    return value.toISOString().slice(0, 10);
   }
 
   return "";
@@ -50,7 +58,7 @@ function buildDateSeries(startDate: string, endExclusive: string): string[] {
   return dates;
 }
 
-function buildDateSeriesFromRows(rows: UsageRecordRow[], fallbackStart: string, fallbackEndExclusive: string): string[] {
+function buildDateSeriesFromRows(rows: ChartAggregateRow[], fallbackStart: string, fallbackEndExclusive: string): string[] {
   const normalizedDates = rows
     .map((row) => normalizeDateKey(row.date))
     .filter((date): date is string => Boolean(date));
@@ -68,8 +76,8 @@ function buildDateSeriesFromRows(rows: UsageRecordRow[], fallbackStart: string, 
   return buildDateSeries(minDate, endExclusive.toISOString().slice(0, 10));
 }
 
-function aggregateChartData(rows: UsageRecordRow[], startDate: string, endExclusive: string) {
-  // 用真实数据的日期范围生成 X 轴，避免“有数据但全落在 0 区”。
+function aggregateChartData(rows: ChartAggregateRow[], startDate: string, endExclusive: string) {
+  // 用真实数据的日期范围生成 X 轴,避免“有数据但全落在 0 区”。
   const dates = buildDateSeriesFromRows(rows, startDate, endExclusive);
 
   const dailyCostMap = new Map<string, { openai: number; anthropic: number; other: number }>();
@@ -88,7 +96,7 @@ function aggregateChartData(rows: UsageRecordRow[], startDate: string, endExclus
       continue;
     }
 
-    const provider = getProviderName(row.provider).toLowerCase();
+    const provider = (row.provider_name ?? "").toLowerCase();
     const costCents = toNumber(row.cost_cents);
     const inputTokens = toNumber(row.input_tokens);
     const outputTokens = toNumber(row.output_tokens);
@@ -159,19 +167,28 @@ export default async function Home() {
 
   const { start: chartStart, endExclusive: chartEndExclusive } = getLast30DaysRange();
 
-  const { data: chartRows, error: chartError } = await supabase
-    .from("usage_records")
-    .select("id, date, model, input_tokens, output_tokens, cost_cents, provider:providers(name)")
-    .eq("user_id", user.id)
-    .gte("date", chartStart)
-    .lt("date", chartEndExclusive);
+  // 图表数据与预算数据都在服务端取齐:图表走数据库端聚合 RPC,
+  // 预算复用 /api/budget 同一取数路径,首屏少一次客户端往返。
+  const [chartResult, budgetResult] = await Promise.all([
+    supabase.rpc("usage_daily_model_aggregates", {
+      p_start: chartStart,
+      p_end_exclusive: chartEndExclusive,
+    }),
+    getBudgetData(supabase, user.id).then(
+      (data): { data: BudgetData; error: null } => ({ data, error: null }),
+      (error: unknown): { data: null; error: string } => ({
+        data: null,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    ),
+  ]);
 
-  if (chartError) {
-    throw new Error(chartError.message);
+  if (chartResult.error) {
+    throw new Error(chartResult.error.message);
   }
 
   const { dailyCostTrend, dailyTokenUsage, costByModel } = aggregateChartData(
-    (chartRows ?? []) as UsageRecordRow[],
+    (chartResult.data ?? []) as ChartAggregateRow[],
     chartStart,
     chartEndExclusive,
   );
@@ -225,7 +242,7 @@ export default async function Home() {
       </section>
 
       <CostSummary />
-      <BudgetSection />
+      <BudgetSection budget={budgetResult.data} error={budgetResult.error} />
 
       <DashboardCharts dailyCostTrend={dailyCostTrend} costByModel={costByModel} dailyTokenUsage={dailyTokenUsage} />
 

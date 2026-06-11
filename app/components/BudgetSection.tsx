@@ -1,34 +1,9 @@
-"use client";
-
-import { useEffect, useMemo, useState } from "react";
+import type { BudgetData } from "@/lib/budget-data";
 
 import { BudgetBar } from "./BudgetBar";
 
-type GlobalBudget = {
-  id: string;
-  monthly_limit_cents: number;
-  alert_threshold_pct: number;
-  current_month_cents: number;
-};
-
-type ProviderBudget = {
-  id: string;
-  name: string;
-  monthly_limit_cents: number | null;
-  alert_threshold_pct: number;
-  current_month_cents: number;
-};
-
-type BudgetResponse = {
-  month: {
-    start: string;
-    endExclusive: string;
-    timeZone: string;
-  };
-  global: GlobalBudget | null;
-  providers: ProviderBudget[];
-  error?: string;
-};
+// 改为纯展示组件:数据由 server component(app/page.tsx)取好传入,
+// 不再在客户端单独 fetch /api/budget——同一份数据此前被取了两次。
 
 type AlertItem = {
   name: string;
@@ -37,7 +12,7 @@ type AlertItem = {
 };
 
 function normalizeThreshold(value: number): number {
-  if (!Number.isFinite(value)) {
+  if (!Number.isFinite(value) || value <= 0) {
     return 80;
   }
 
@@ -62,83 +37,28 @@ function providerLabel(name: string) {
   return name;
 }
 
-export function BudgetSection() {
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [budget, setBudget] = useState<BudgetResponse | null>(null);
+export function BudgetSection({ budget, error }: { budget: BudgetData | null; error: string | null }) {
+  const providerRows = (budget?.providers ?? []).filter(
+    (provider) => provider.monthly_limit_cents && provider.monthly_limit_cents > 0,
+  );
 
-  useEffect(() => {
-    const controller = new AbortController();
+  const alerts: AlertItem[] = [];
 
-    async function load() {
-      setLoading(true);
-      setError("");
-
-      try {
-        const response = await fetch("/api/budget", {
-          method: "GET",
-          signal: controller.signal,
-          cache: "no-store",
-        });
-
-        const result = (await response.json()) as BudgetResponse;
-        if (!response.ok) {
-          setError(result.error ?? "Failed to load budget data");
-          setBudget(null);
-          return;
-        }
-
-        setBudget(result);
-      } catch (fetchError) {
-        if ((fetchError as { name?: string }).name === "AbortError") {
-          return;
-        }
-
-        setError(fetchError instanceof Error ? fetchError.message : "Failed to load budget data");
-        setBudget(null);
-      } finally {
-        setLoading(false);
-      }
+  if (budget?.global?.monthly_limit_cents && budget.global.monthly_limit_cents > 0) {
+    const percent = getPercent(budget.global.current_month_cents, budget.global.monthly_limit_cents);
+    const threshold = normalizeThreshold(budget.global.alert_threshold_pct);
+    if (percent >= threshold) {
+      alerts.push({ name: "Global", percent, isOver: percent >= 100 });
     }
+  }
 
-    void load();
-
-    return () => controller.abort();
-  }, []);
-
-  const providerRows = useMemo(() => {
-    return (budget?.providers ?? []).filter((provider) => provider.monthly_limit_cents && provider.monthly_limit_cents > 0);
-  }, [budget?.providers]);
-
-  const alerts = useMemo<AlertItem[]>(() => {
-    const items: AlertItem[] = [];
-
-    if (budget?.global?.monthly_limit_cents && budget.global.monthly_limit_cents > 0) {
-      const percent = getPercent(budget.global.current_month_cents, budget.global.monthly_limit_cents);
-      const threshold = normalizeThreshold(budget.global.alert_threshold_pct);
-      if (percent >= threshold) {
-        items.push({
-          name: "Global",
-          percent,
-          isOver: percent >= 100,
-        });
-      }
+  for (const provider of providerRows) {
+    const percent = getPercent(provider.current_month_cents, provider.monthly_limit_cents);
+    const threshold = normalizeThreshold(provider.alert_threshold_pct);
+    if (percent >= threshold) {
+      alerts.push({ name: providerLabel(provider.name), percent, isOver: percent >= 100 });
     }
-
-    for (const provider of providerRows) {
-      const percent = getPercent(provider.current_month_cents, provider.monthly_limit_cents);
-      const threshold = normalizeThreshold(provider.alert_threshold_pct);
-      if (percent >= threshold) {
-        items.push({
-          name: providerLabel(provider.name),
-          percent,
-          isOver: percent >= 100,
-        });
-      }
-    }
-
-    return items;
-  }, [budget?.global, providerRows]);
+  }
 
   const hasAnyBar = Boolean(
     (budget?.global?.monthly_limit_cents && budget.global.monthly_limit_cents > 0) || providerRows.length > 0,
@@ -163,16 +83,15 @@ export function BudgetSection() {
         </div>
       </div>
 
-      {loading ? <p className="mt-3 text-sm text-zinc-500">Loading budget...</p> : null}
       {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
 
-      {!loading && !error && alerts.length > 0 ? (
+      {!error && alerts.length > 0 ? (
         <div className={`mt-5 rounded-2xl border px-4 py-3 text-sm shadow-sm ${bannerClass}`}>
           Alert: {alerts.map((item) => `${item.name} ${Math.round(item.percent)}%`).join(" · ")}
         </div>
       ) : null}
 
-      {!loading && !error && hasAnyBar ? (
+      {!error && hasAnyBar ? (
         <div className="mt-5 grid gap-3">
           <BudgetBar
             title="Global Budget"
@@ -193,7 +112,7 @@ export function BudgetSection() {
         </div>
       ) : null}
 
-      {!loading && !error && !hasAnyBar ? (
+      {!error && !hasAnyBar ? (
         <div className="soft-panel mt-5 rounded-[24px] p-4 text-sm text-zinc-600">
           No budget set yet. Configure global or provider-level limits from Settings.
         </div>
