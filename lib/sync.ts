@@ -112,22 +112,44 @@ export async function runProviderSync(options: {
     };
   }
 
-  // 原子抢占同步名额。
+  // 原子抢占同步名额。PostgREST 在 PATCH 上使用复合
+  // `.or(last_synced_at.is.null,last_synced_at.lt.<cutoff>)` 会生成错误 SQL
+  // (`column providers.last_synced_at does not exist`),因此拆成两个条件 UPDATE。
+  // 每个 UPDATE 都会在行锁后重新检查条件,并发请求仍只有一个能命中。
   const nowDate = now();
   const cutoffIso = new Date(nowDate.getTime() - MIN_SYNC_INTERVAL_SECONDS * 1000).toISOString();
-  const { data: claimed, error: claimError } = await supabase
+  const claimPayload = { last_synced_at: nowDate.toISOString() };
+  const { data: expiredClaim, error: expiredClaimError } = await supabase
     .from("providers")
-    .update({ last_synced_at: nowDate.toISOString() })
+    .update(claimPayload)
     .eq("id", provider.id)
     .eq("user_id", userId)
-    .or(`last_synced_at.is.null,last_synced_at.lt.${cutoffIso}`)
+    .lt("last_synced_at", cutoffIso)
     .select("id");
 
-  if (claimError) {
-    return { status: 500, body: { synced: 0, errors: [claimError.message] } };
+  if (expiredClaimError) {
+    return { status: 500, body: { synced: 0, errors: [expiredClaimError.message] } };
   }
 
-  if (!claimed || claimed.length === 0) {
+  let claimed = expiredClaim ?? [];
+
+  if (claimed.length === 0) {
+    const { data: nullClaim, error: nullClaimError } = await supabase
+      .from("providers")
+      .update(claimPayload)
+      .eq("id", provider.id)
+      .eq("user_id", userId)
+      .is("last_synced_at", null)
+      .select("id");
+
+    if (nullClaimError) {
+      return { status: 500, body: { synced: 0, errors: [nullClaimError.message] } };
+    }
+
+    claimed = nullClaim ?? [];
+  }
+
+  if (claimed.length === 0) {
     return {
       status: 429,
       body: { synced: 0, errors: ["Rate limited: a sync for this provider ran within the last minute."] },

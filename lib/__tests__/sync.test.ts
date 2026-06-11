@@ -49,8 +49,8 @@ function createFakeSupabase(dispatch: (call: Call) => Result): { client: Supabas
         call.filters.push(["eq", k, v]);
         return b;
       },
-      or: (expr: string) => {
-        call.filters.push(["or", expr]);
+      is: (k: string, v: unknown) => {
+        call.filters.push(["is", k, v]);
         return b;
       },
       gte: (k: string, v: unknown) => {
@@ -148,13 +148,19 @@ describe("runProviderSync — rate limiting", () => {
     expect(second.body.errors[0]).toMatch(/Rate limited/);
   });
 
-  it("claim 的条件 UPDATE 带 last_synced_at 空值/过期过滤", async () => {
-    const { client, calls } = createFakeSupabase(baseDispatch({}));
+  it("claims expired timestamps first and falls back to a null timestamp", async () => {
+    let claims = 0;
+    const { client, calls } = createFakeSupabase(
+      baseDispatch({
+        claim: () => ({ data: ++claims === 1 ? [] : [{ id: "prov-1" }], error: null }),
+      }),
+    );
     await runProviderSync(runOpts(client, async () => []));
 
-    const claim = calls.find((c) => c.table === "providers" && c.op === "update");
-    const orFilter = claim?.filters.find(([kind]) => kind === "or");
-    expect(String(orFilter?.[1])).toMatch(/last_synced_at\.is\.null,last_synced_at\.lt\./);
+    const claimCalls = calls.filter((c) => c.table === "providers" && c.op === "update");
+    expect(claimCalls).toHaveLength(2);
+    expect(claimCalls[0].filters.some(([kind, column]) => kind === "lt" && column === "last_synced_at")).toBe(true);
+    expect(claimCalls[1].filters).toContainEqual(["is", "last_synced_at", null]);
   });
 
   it("returns 500 when the claim update itself errors", async () => {
