@@ -1,3 +1,5 @@
+export { toNumber } from "@/lib/normalize";
+
 export type ProviderRef = {
   name: string;
 };
@@ -11,19 +13,6 @@ export type UsageRecordRow = {
   cost_cents: number | string | null;
   provider: ProviderRef | ProviderRef[] | null;
 };
-
-export function toNumber(value: number | string | null | undefined): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
-}
 
 export function formatDate(dateString: string) {
   return new Date(`${dateString}T00:00:00.000Z`).toLocaleDateString("en-US", {

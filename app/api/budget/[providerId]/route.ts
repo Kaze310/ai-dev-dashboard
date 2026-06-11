@@ -1,46 +1,12 @@
 import { NextResponse } from "next/server";
 
+import { parseMonthlyLimitField, parseThresholdField } from "@/lib/budget-validation";
 import { createClient } from "@/lib/supabase/server";
 
 type ProviderBudgetPutBody = {
   monthly_limit_cents?: number | null;
   alert_threshold_pct?: number;
 };
-
-function toNumber(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : NaN;
-  }
-
-  return NaN;
-}
-
-function normalizeThreshold(value: unknown): number {
-  const parsed = Math.round(toNumber(value));
-  if (!Number.isFinite(parsed)) {
-    return 80;
-  }
-
-  return Math.min(100, Math.max(1, parsed));
-}
-
-function normalizeMonthlyLimit(value: unknown): number | null {
-  if (value === null || value === undefined || value === "") {
-    return null;
-  }
-
-  const parsed = Math.round(toNumber(value));
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return null;
-  }
-
-  return parsed;
-}
 
 export async function PUT(
   request: Request,
@@ -64,8 +30,41 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const monthlyLimit = normalizeMonthlyLimit(body.monthly_limit_cents);
-  const alertThreshold = normalizeThreshold(body.alert_threshold_pct);
+  // 字段语义:缺席 = 不改动;显式 null/空 = 清除 limit;非法 = 400。
+  // 此前 `PUT {alert_threshold_pct: 90}` 会把缺席的 limit 当 null 清掉预算。
+  const rawBody = (body ?? {}) as Record<string, unknown>;
+  const monthlyLimit = parseMonthlyLimitField(rawBody);
+  if (monthlyLimit.kind === "invalid") {
+    return NextResponse.json(
+      { error: "monthly_limit_cents must be a positive number, or null/empty to clear the budget" },
+      { status: 400 },
+    );
+  }
+
+  const alertThreshold = parseThresholdField(rawBody);
+  if (alertThreshold.kind === "invalid") {
+    return NextResponse.json(
+      { error: "alert_threshold_pct must be a number between 1 and 100" },
+      { status: 400 },
+    );
+  }
+
+  if (monthlyLimit.kind === "missing" && alertThreshold.kind === "missing") {
+    return NextResponse.json(
+      { error: "Nothing to update: provide monthly_limit_cents and/or alert_threshold_pct" },
+      { status: 400 },
+    );
+  }
+
+  const updatePayload: { monthly_limit_cents?: number | null; alert_threshold_pct?: number } = {};
+  if (monthlyLimit.kind === "clear") {
+    updatePayload.monthly_limit_cents = null;
+  } else if (monthlyLimit.kind === "value") {
+    updatePayload.monthly_limit_cents = monthlyLimit.cents;
+  }
+  if (alertThreshold.kind === "value") {
+    updatePayload.alert_threshold_pct = alertThreshold.pct;
+  }
 
   const { data: provider, error: queryError } = await supabase
     .from("providers")
@@ -84,10 +83,7 @@ export async function PUT(
 
   const { data, error } = await supabase
     .from("providers")
-    .update({
-      monthly_limit_cents: monthlyLimit,
-      alert_threshold_pct: alertThreshold,
-    })
+    .update(updatePayload)
     .eq("id", provider.id)
     .eq("user_id", user.id)
     .select("id, name, monthly_limit_cents, alert_threshold_pct")
