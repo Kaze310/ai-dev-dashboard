@@ -5,13 +5,13 @@ import {
   getCurrentLocalDateParts,
   getMonthLabel,
   getMonthRange,
-  getTodayRange,
+  getYesterdayRange,
   getYtdRange,
 } from "@/lib/date-range";
 import { toNumber } from "@/lib/normalize";
 import { createClient } from "@/lib/supabase/server";
 
-type Mode = "today" | "month" | "ytd";
+type Mode = "yesterday" | "month" | "ytd";
 
 function parseMonthValue(monthParam: string | null, yearParam: string | null, timeZone: string) {
   const fallback = getCurrentLocalDateParts(timeZone);
@@ -38,14 +38,14 @@ export async function GET(request: NextRequest) {
 
   const timeZone = getAppTimeZone();
   const modeParam = request.nextUrl.searchParams.get("mode");
-  const mode: Mode = modeParam === "today" || modeParam === "ytd" || modeParam === "month" ? modeParam : "month";
+  const mode: Mode = modeParam === "yesterday" || modeParam === "ytd" || modeParam === "month" ? modeParam : "month";
 
   let start = "";
   let endExclusive = "";
   let label = "";
 
-  if (mode === "today") {
-    const range = getTodayRange(timeZone);
+  if (mode === "yesterday") {
+    const range = getYesterdayRange(timeZone);
     start = range.start;
     endExclusive = range.endExclusive;
     label = range.label;
