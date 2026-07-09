@@ -4,6 +4,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -145,6 +146,10 @@ export default function LoginPage() {
           </form>
 
           {message ? <p className="mt-5 text-sm text-zinc-700">{message}</p> : null}
+
+          <Link href="/showcase" className="mt-6 inline-flex text-sm font-medium text-[color:var(--accent)] hover:underline">
+            View public showcase
+          </Link>
         </section>
       </div>
     </main>
