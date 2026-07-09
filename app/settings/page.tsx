@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 
 import { BudgetSettingsForm } from "./BudgetSettingsForm";
 import { OpenAISettingsForm } from "./OpenAISettingsForm";
+import { AccountActions } from "@/app/components/AccountActions";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -38,12 +39,15 @@ export default async function SettingsPage() {
             </p>
           </div>
 
-          <Link
-            className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white/75 px-5 py-2.5 text-sm font-medium text-zinc-800 shadow-sm hover:-translate-y-0.5"
-            href="/"
-          >
-            Back to Dashboard
-          </Link>
+          <div className="flex flex-col items-end gap-3">
+            <AccountActions email={user.email ?? "Account"} />
+            <Link
+              className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white/75 px-5 py-2.5 text-sm font-medium text-zinc-800 shadow-sm hover:-translate-y-0.5"
+              href="/"
+            >
+              Back to Dashboard
+            </Link>
+          </div>
         </div>
 
         <div className="mt-6 rounded-[24px] border border-amber-200 bg-amber-50/85 px-5 py-4 text-sm text-amber-900 shadow-sm">

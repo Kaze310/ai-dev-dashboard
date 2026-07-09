@@ -9,6 +9,7 @@ import { BudgetSection } from "./components/BudgetSection";
 import { DashboardCharts, type DailyCostPoint, type DailyTokenPoint, type ModelCostPoint } from "./components/DashboardCharts";
 import { SyncButtons } from "./SyncButtons";
 import { CostSummary } from "./components/CostSummary";
+import { AccountActions } from "./components/AccountActions";
 
 // usage_daily_model_aggregates RPC 的返回行:已在数据库端按
 // (date, provider, model) 聚合,避开 PostgREST 1000 行截断。
@@ -211,10 +212,7 @@ export default async function Home() {
           </div>
 
           <div className="relative flex flex-col gap-3 sm:items-end">
-            <div className="rounded-[24px] border border-white/70 bg-white/72 px-5 py-4 shadow-sm backdrop-blur">
-              <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">Signed in as</p>
-              <p className="mt-2 text-sm font-medium text-zinc-900">{user.email}</p>
-            </div>
+            <AccountActions email={user.email ?? "Account"} />
 
             <Link
               href="/settings"

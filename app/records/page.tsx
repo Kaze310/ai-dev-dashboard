@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { UsageRecordsTable } from "@/app/components/UsageRecordsTable";
+import { AccountActions } from "@/app/components/AccountActions";
 import { createClient } from "@/lib/supabase/server";
 import type { UsageRecordRow } from "@/lib/usage-records";
 
@@ -41,7 +42,9 @@ export default async function RecordsPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="flex flex-col items-end gap-3">
+            <AccountActions email={user.email ?? "Account"} />
+            <div className="flex flex-wrap justify-end gap-3">
             <Link
               href="/"
               className="inline-flex items-center rounded-full border border-[color:var(--line)] bg-white/75 px-5 py-2.5 text-sm font-medium text-zinc-800 shadow-sm hover:-translate-y-0.5"
@@ -54,6 +57,7 @@ export default async function RecordsPage() {
             >
               Open Settings
             </Link>
+            </div>
           </div>
         </div>
       </section>
