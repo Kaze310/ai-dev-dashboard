@@ -1,51 +1,18 @@
-export type AnthropicUsageRecord = {
-  date: string;
-  model: string;
-  input_tokens: number;
-  output_tokens: number;
-  cost_cents: number;
-};
+import { isObject, normalizeModel, toNumber, buildDateModelKey } from "@/lib/normalize";
+import { allocateCosts, type ProviderUsageRecord } from "@/lib/providers/shared";
+
+export type AnthropicUsageRecord = ProviderUsageRecord;
 
 type AnthropicResponse = {
   data?: unknown[];
   has_more?: boolean;
-  next_id?: string | null;
-  last_id?: string | null;
+  next_page?: string | null;
 };
 
 const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
 const ANTHROPIC_VERSION = "2023-06-01";
 const MAX_DAILY_BUCKET_LIMIT = 31;
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function toNumber(value: unknown): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
-}
-
-function normalizeModel(value: unknown): string {
-  if (typeof value !== "string") {
-    return "unknown";
-  }
-
-  const normalized = value.trim();
-  if (!normalized || normalized === "null" || normalized === "undefined") {
-    return "unknown";
-  }
-
-  return normalized;
-}
+const MAX_DAYS_PER_WINDOW = 31;
 
 function toIsoStart(dateString: string): string {
   return `${dateString}T00:00:00Z`;
@@ -57,32 +24,56 @@ function toIsoEndExclusive(dateString: string): string {
   return date.toISOString().replace(".000", "");
 }
 
-function bucketToDate(bucket: Record<string, unknown>): string {
+function addDaysYmd(ymd: string, days: number): string {
+  const date = new Date(`${ymd}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * 把日期范围切成 ≤31 天的窗口。limit=31 个 1d bucket 配 31 天窗口,
+ * 单窗口必然单页,但分页逻辑仍保留兜底。
+ */
+function splitIntoDateWindows(startDate: string, endDate: string): Array<{ start: string; end: string }> {
+  const windows: Array<{ start: string; end: string }> = [];
+  let cursor = startDate;
+
+  while (cursor <= endDate) {
+    const windowEnd = addDaysYmd(cursor, MAX_DAYS_PER_WINDOW - 1);
+    windows.push({ start: cursor, end: windowEnd < endDate ? windowEnd : endDate });
+    cursor = addDaysYmd(windowEnd, 1);
+  }
+
+  return windows;
+}
+
+function bucketToDate(bucket: Record<string, unknown>): string | null {
   const value = bucket.start_time ?? bucket.starting_at ?? bucket.date;
-  if (typeof value === "string") {
+  if (typeof value === "string" && value.length >= 10) {
     return value.slice(0, 10);
   }
 
-  if (typeof value === "number") {
+  if (typeof value === "number" && value > 0) {
     return new Date(value * 1000).toISOString().slice(0, 10);
   }
 
-  return new Date().toISOString().slice(0, 10);
+  // 取不到 bucket 日期就跳过,不再 fallback 到“今天”给数据安错日期。
+  return null;
 }
 
-function stripAnthropicSnapshotSuffix(model: string): string {
-  // Anthropic 模型快照常见后缀：-YYYYMMDD（例如 claude-sonnet-4-5-20250929）。
+export function stripAnthropicSnapshotSuffix(model: string): string {
+  // Anthropic 模型快照常见后缀:-YYYYMMDD(例如 claude-sonnet-4-5-20250929)。
   return model.replace(/-(20\d{6})$/, "");
 }
 
-function canonicalizeModel(model: string): string {
+export function canonicalizeModel(model: string): string {
   return stripAnthropicSnapshotSuffix(model.trim().toLowerCase());
 }
 
-function canonicalizeCostIdentifier(identifier: string): string {
+export function canonicalizeCostIdentifier(identifier: string): string {
   const normalized = identifier.trim().toLowerCase();
 
-  // cost report 里可能带 input/output/cache 文案，先剥离。
+  // cost report 里可能带 input/output/cache 文案,先剥离。
   const withoutSuffix = normalized
     .replace(/^batch api\s*\|\s*/i, "")
     .replace(/\s*,\s*(input|output|cache_read|cache_write|cached input|cached output)$/i, "")
@@ -94,8 +85,7 @@ function canonicalizeCostIdentifier(identifier: string): string {
     .replace(/\s+usage$/i, "")
     .trim();
 
-  // Anthropic 常见格式：Claude Opus 4.6 Usage - Input Tokens
-  // 统一转为 claude-opus-4-6，便于和 usage model 对齐。
+  // Anthropic 常见格式:Claude Opus 4.6 Usage - Input Tokens → claude-opus-4-6。
   const spacedMatch = withoutSuffix.match(/^claude\s+([a-z0-9]+)\s+([0-9.]+)/i);
   if (spacedMatch) {
     const family = spacedMatch[1];
@@ -103,19 +93,15 @@ function canonicalizeCostIdentifier(identifier: string): string {
     return canonicalizeModel(`claude-${family}-${version}`);
   }
 
-  // 优先抽取规范模型 token（如 claude-sonnet-4-5）。
+  // 优先抽取规范模型 token(如 claude-sonnet-4-5)。
   const match = withoutSuffix.match(/(claude-[a-z0-9-]+)/i);
   if (match) {
     return canonicalizeModel(match[1]);
   }
 
-  // 兜底：把空格/点转成短横线，尽量贴近 usage model 格式。
+  // 兜底:把空格/点转成短横线,尽量贴近 usage model 格式。
   const fallback = withoutSuffix.replace(/[.\s]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
   return canonicalizeModel(fallback);
-}
-
-function buildKey(date: string, model: string): string {
-  return `${date}|${model}`;
 }
 
 async function fetchUsageRange(
@@ -124,7 +110,7 @@ async function fetchUsageRange(
   endIso: string,
 ): Promise<AnthropicUsageRecord[]> {
   const records: AnthropicUsageRecord[] = [];
-  let cursor: string | undefined;
+  let page: string | undefined;
 
   while (true) {
     const params = new URLSearchParams({
@@ -135,8 +121,9 @@ async function fetchUsageRange(
     });
     params.append("group_by[]", "model");
 
-    if (cursor) {
-      params.set("after_id", cursor);
+    // 分页参数是 page/next_page(对照官方文档),不是 after_id/next_id。
+    if (page) {
+      params.set("page", page);
     }
 
     const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/organizations/usage_report/messages?${params.toString()}`, {
@@ -164,7 +151,9 @@ async function fetchUsageRange(
       }
 
       const date = bucketToDate(bucket);
-      let bucketModelRows = 0;
+      if (!date) {
+        continue;
+      }
 
       for (const result of bucket.results) {
         if (!isObject(result)) {
@@ -175,11 +164,9 @@ async function fetchUsageRange(
         if (model === "unknown") {
           continue;
         }
-        bucketModelRows += 1;
-        // 临时诊断：确认 usage_report 当天是否真的返回了按模型拆分的数据行。
-        console.log(`[anthropic-usage-raw] date=${date} model=${JSON.stringify(model)}`);
 
-        // Anthropic usage_report/messages 常见字段包含 input/output 与 cache tokens。
+        // cache_creation / cache_read 计入 input_tokens 是有意为之的简化,
+        // 含义与控制台的 input 口径不同(cache read 单价更低),见 README。
         const inputTokens =
           toNumber(result.input_tokens) +
           toNumber(result.cache_creation_input_tokens) +
@@ -194,19 +181,16 @@ async function fetchUsageRange(
           cost_cents: 0,
         });
       }
-
-      // 临时诊断：每个日期 bucket 命中了多少条模型行。
-      console.log(`[anthropic-usage-bucket] date=${date} model_rows=${bucketModelRows}`);
     }
 
     const hasMore = Boolean(typed?.has_more);
-    const next = typed?.next_id ?? typed?.last_id ?? undefined;
+    const next = typed?.next_page ?? undefined;
 
     if (!hasMore || !next) {
       break;
     }
 
-    cursor = next;
+    page = next;
   }
 
   return records;
@@ -217,9 +201,9 @@ async function fetchCostRange(
   startIso: string,
   endIso: string,
 ): Promise<Map<string, number>> {
-  // 这里 value 先存 USD 浮点，最后合并到记录时再换算 cents。
+  // Anthropic cost_report 的 amount 单位是最小货币单位 cents(已对照官方文档)。
   const costs = new Map<string, number>();
-  let cursor: string | undefined;
+  let page: string | undefined;
 
   while (true) {
     const params = new URLSearchParams({
@@ -230,8 +214,8 @@ async function fetchCostRange(
     });
     params.append("group_by[]", "description");
 
-    if (cursor) {
-      params.set("after_id", cursor);
+    if (page) {
+      params.set("page", page);
     }
 
     const response = await fetch(`${ANTHROPIC_BASE_URL}/v1/organizations/cost_report?${params.toString()}`, {
@@ -259,7 +243,9 @@ async function fetchCostRange(
       }
 
       const date = bucketToDate(bucket);
-      let bucketCostRows = 0;
+      if (!date) {
+        continue;
+      }
 
       for (const result of bucket.results) {
         if (!isObject(result)) {
@@ -271,33 +257,24 @@ async function fetchCostRange(
         if (!canonical) {
           continue;
         }
-        bucketCostRows += 1;
-        // 临时诊断：确认 cost_report 当天返回的原始 description / line_item。
-        console.log(
-          `[anthropic-cost-raw] date=${date} description=${JSON.stringify(result.description)} line_item=${JSON.stringify(result.line_item)} canonical=${canonical}`,
-        );
 
         const amountObj = isObject(result.amount) ? result.amount : {};
-        // Anthropic 文档说明 amount.value 以最小单位（cents）给出，这里先按 cents 浮点累加。
         const cents = Math.max(0, toNumber(amountObj.value ?? result.amount));
 
-        const key = buildKey(date, canonical);
+        const key = buildDateModelKey(date, canonical);
         const previous = costs.get(key) ?? 0;
         costs.set(key, previous + cents);
       }
-
-      // 临时诊断：每个日期 bucket 命中了多少条成本行。
-      console.log(`[anthropic-cost-bucket] date=${date} cost_rows=${bucketCostRows}`);
     }
 
     const hasMore = Boolean(typed?.has_more);
-    const next = typed?.next_id ?? typed?.last_id ?? undefined;
+    const next = typed?.next_page ?? undefined;
 
     if (!hasMore || !next) {
       break;
     }
 
-    cursor = next;
+    page = next;
   }
 
   return costs;
@@ -308,97 +285,74 @@ export async function fetchAnthropicUsage(
   startDate: string,
   endDate: string,
 ): Promise<AnthropicUsageRecord[]> {
-  // 这里要求调用方传入已经解密后的 API key；provider 层本身不直接访问数据库。
-  const startIso = toIsoStart(startDate);
-  const endIso = toIsoEndExclusive(endDate);
+  // 调用方传入已解密的 API key;provider 层不访问数据库。
+  if (startDate > endDate) {
+    throw new Error("Invalid date range for Anthropic usage sync");
+  }
 
-  const usageRecords = await fetchUsageRange(apiKey, startIso, endIso);
-  const costMap = await fetchCostRange(apiKey, startIso, endIso);
+  // 与 OpenAI 端一致:>31 天的范围切窗口,避免单请求超出 bucket 上限。
+  const windows = splitIntoDateWindows(startDate, endDate);
 
-  const groups = new Map<string, number[]>();
-  usageRecords.forEach((record, index) => {
-    const key = buildKey(record.date, canonicalizeModel(record.model));
-    const existing = groups.get(key) ?? [];
-    existing.push(index);
-    groups.set(key, existing);
+  const usageRecords: AnthropicUsageRecord[] = [];
+  const costMapCents = new Map<string, number>();
+
+  for (const window of windows) {
+    const startIso = toIsoStart(window.start);
+    const endIso = toIsoEndExclusive(window.end);
+
+    const partialUsage = await fetchUsageRange(apiKey, startIso, endIso);
+    usageRecords.push(...partialUsage);
+
+    const partialCosts = await fetchCostRange(apiKey, startIso, endIso);
+    for (const [key, value] of partialCosts.entries()) {
+      costMapCents.set(key, (costMapCents.get(key) ?? 0) + value);
+    }
+  }
+
+  return allocateCosts(usageRecords, costMapCents, canonicalizeModel);
+}
+
+/**
+ * 保存 key 时做一次轻量验证:拉 1 天 usage。
+ * 在保存时就区分“key 无效”(401)与“非 admin key / 权限不足”(403)。
+ */
+export async function verifyAnthropicAdminKey(apiKey: string): Promise<{ ok: boolean; message?: string }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const params = new URLSearchParams({
+    starting_at: toIsoStart(addDaysYmd(today, -1)),
+    ending_at: toIsoEndExclusive(today),
+    bucket_width: "1d",
+    limit: "1",
   });
 
-  const costByIndex = new Map<number, number>();
-  let matchedGroupCostCents = 0;
+  const response = await fetch(
+    `${ANTHROPIC_BASE_URL}/v1/organizations/usage_report/messages?${params.toString()}`,
+    {
+      method: "GET",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": ANTHROPIC_VERSION,
+      },
+      cache: "no-store",
+    },
+  );
 
-  for (const [groupKey, indexes] of groups.entries()) {
-    const groupCostCents = costMap.get(groupKey) ?? 0;
-    if (groupCostCents <= 0) {
-      continue;
-    }
-
-    matchedGroupCostCents += groupCostCents;
-
-    const totalGroupCents = Math.max(0, Math.round(groupCostCents));
-
-    if (indexes.length === 1) {
-      costByIndex.set(indexes[0], totalGroupCents);
-      continue;
-    }
-
-    const tokens = indexes.map((index) => {
-      const record = usageRecords[index];
-      return Math.max(0, record.input_tokens + record.output_tokens);
-    });
-    const totalTokens = tokens.reduce((sum, value) => sum + value, 0);
-
-    if (totalTokens <= 0) {
-      const evenCents = groupCostCents / indexes.length;
-      let assignedCents = 0;
-
-      for (let i = 0; i < indexes.length; i += 1) {
-        const index = indexes[i];
-        if (i === indexes.length - 1) {
-          costByIndex.set(index, Math.max(0, totalGroupCents - assignedCents));
-          continue;
-        }
-
-        const shareCents = Math.max(0, Math.round(evenCents));
-        costByIndex.set(index, shareCents);
-        assignedCents += shareCents;
-      }
-
-      continue;
-    }
-
-    let assignedCents = 0;
-
-    for (let i = 0; i < indexes.length; i += 1) {
-      const index = indexes[i];
-      if (i === indexes.length - 1) {
-        costByIndex.set(index, Math.max(0, totalGroupCents - assignedCents));
-        continue;
-      }
-
-      const shareCentsFloat = (tokens[i] / totalTokens) * groupCostCents;
-      const shareCents = Math.max(0, Math.round(shareCentsFloat));
-      costByIndex.set(index, shareCents);
-      assignedCents += shareCents;
-    }
+  if (response.ok) {
+    return { ok: true };
   }
 
-  // 临时诊断：核对成本映射覆盖率，定位“总额偏低”来源。
-  const totalCostMapCents = [...costMap.values()].reduce((sum, value) => sum + value, 0);
-  const unmatchedCostEntries = [...costMap.entries()].filter(([key]) => !groups.has(key));
-  const unmatchedCostCents = unmatchedCostEntries.reduce((sum, [, value]) => sum + value, 0);
-
-  console.log(
-    `[anthropic-cost-coverage] range=${startDate}..${endDate} total=${totalCostMapCents.toFixed(2)} matched=${matchedGroupCostCents.toFixed(2)} unmatched=${unmatchedCostCents.toFixed(2)}`,
-  );
-  console.log(
-    `[anthropic-cost-coverage] groups usage=${groups.size} cost=${costMap.size} unmatched_entries=${unmatchedCostEntries.length}`,
-  );
-  for (const [key, value] of unmatchedCostEntries.slice(0, 20)) {
-    console.log(`[anthropic-cost-unmatched] ${key} => ${value.toFixed(2)} cents`);
+  if (response.status === 401) {
+    return { ok: false, message: "Anthropic rejected the key (401): the API key is invalid." };
   }
 
-  return usageRecords.map((record, index) => ({
-    ...record,
-    cost_cents: costByIndex.get(index) ?? 0,
-  }));
+  if (response.status === 403) {
+    return {
+      ok: false,
+      message:
+        "Anthropic rejected the key (403): the key is valid but cannot access org usage reports. An organization admin key (sk-ant-admin...) is required.",
+    };
+  }
+
+  const text = await response.text();
+  return { ok: false, message: `Anthropic key verification failed (${response.status}): ${text.slice(0, 300)}` };
 }

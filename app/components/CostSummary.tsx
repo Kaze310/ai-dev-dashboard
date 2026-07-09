@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Mode = "today" | "month" | "ytd";
+type Mode = "yesterday" | "month" | "ytd";
 
 type CostSummaryResponse = {
   mode: Mode;
@@ -26,7 +26,12 @@ function pad2(value: number) {
 }
 
 function formatUsd(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
+  // 非 0 但不足一分钱显示 <$0.01,避免显示成 $0.00。
+  const dollars = cents / 100;
+  if (dollars > 0 && dollars < 0.01) {
+    return "<$0.01";
+  }
+  return `$${dollars.toFixed(2)}`;
 }
 
 function getNowInUtc() {
@@ -137,10 +142,10 @@ export function CostSummary() {
         <div className="inline-flex rounded-full border border-[color:var(--line)] bg-white/75 p-1 text-sm shadow-sm">
           <button
             type="button"
-            onClick={() => setMode("today")}
-            className={`rounded-full px-3 py-1.5 ${mode === "today" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
+            onClick={() => setMode("yesterday")}
+            className={`rounded-full px-3 py-1.5 ${mode === "yesterday" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
           >
-            Today
+            Yesterday
           </button>
           <button
             type="button"

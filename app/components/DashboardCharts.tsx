@@ -39,6 +39,10 @@ type DashboardChartsProps = {
 };
 
 function formatUsd(value: number) {
+  // 非 0 但不足一分钱显示 <$0.01(仅用于 tooltip;Y 轴 tick 是另一处 inline formatter)。
+  if (value > 0 && value < 0.01) {
+    return "<$0.01";
+  }
   return `$${value.toFixed(2)}`;
 }
 

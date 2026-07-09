@@ -8,7 +8,12 @@ type BudgetBarProps = {
 };
 
 function formatUsd(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
+  // 非 0 但不足一分钱显示 <$0.01,避免显示成 $0.00。
+  const dollars = cents / 100;
+  if (dollars > 0 && dollars < 0.01) {
+    return "<$0.01";
+  }
+  return `$${dollars.toFixed(2)}`;
 }
 
 function clampPercent(value: number) {

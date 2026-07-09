@@ -87,7 +87,7 @@ export function OpenAISettingsForm({
       }
 
       updateProvider(name, {
-        saveMessage: `${providerLabel(name)} API Key 已保存（仅服务端存储）。`,
+        saveMessage: `${providerLabel(name)} API Key 已验证并保存（仅服务端存储）。`,
         apiKey: "",
         isSaving: false,
         hasKey: true,

@@ -5,25 +5,13 @@ import {
   getCurrentLocalDateParts,
   getMonthLabel,
   getMonthRange,
-  getTodayRange,
+  getYesterdayRange,
   getYtdRange,
 } from "@/lib/date-range";
+import { toNumber } from "@/lib/normalize";
 import { createClient } from "@/lib/supabase/server";
 
-type Mode = "today" | "month" | "ytd";
-
-function toNumber(value: number | string | null | undefined): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
-}
+type Mode = "yesterday" | "month" | "ytd";
 
 function parseMonthValue(monthParam: string | null, yearParam: string | null, timeZone: string) {
   const fallback = getCurrentLocalDateParts(timeZone);
@@ -50,14 +38,14 @@ export async function GET(request: NextRequest) {
 
   const timeZone = getAppTimeZone();
   const modeParam = request.nextUrl.searchParams.get("mode");
-  const mode: Mode = modeParam === "today" || modeParam === "ytd" || modeParam === "month" ? modeParam : "month";
+  const mode: Mode = modeParam === "yesterday" || modeParam === "ytd" || modeParam === "month" ? modeParam : "month";
 
   let start = "";
   let endExclusive = "";
   let label = "";
 
-  if (mode === "today") {
-    const range = getTodayRange(timeZone);
+  if (mode === "yesterday") {
+    const range = getYesterdayRange(timeZone);
     start = range.start;
     endExclusive = range.endExclusive;
     label = range.label;
@@ -78,18 +66,18 @@ export async function GET(request: NextRequest) {
     label = getMonthLabel(year, month, timeZone);
   }
 
-  const { data, error } = await supabase
-    .from("usage_records")
-    .select("cost_cents")
-    .eq("user_id", user.id)
-    .gte("date", start)
-    .lt("date", endExclusive);
+  // 汇总下推数据库:此前 select 原始行再 JS 求和,PostgREST 默认 1000 行
+  // 上限会静默截断(YTD 必然超限),总额偏小且无任何报错。
+  const { data, error } = await supabase.rpc("usage_cost_total", {
+    p_start: start,
+    p_end_exclusive: endExclusive,
+  });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const totalCents = (data ?? []).reduce((sum, row) => sum + toNumber(row.cost_cents), 0);
+  const totalCents = toNumber(data);
 
   return NextResponse.json({
     mode,

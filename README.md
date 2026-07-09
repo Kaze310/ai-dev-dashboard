@@ -129,6 +129,7 @@ Current migration files:
 - `supabase/migrations/001_initial.sql`
 - `supabase/migrations/002_usage_provider_constraints.sql`
 - `supabase/migrations/003_20260303_budget_alerts.sql`
+- `supabase/migrations/004_20260610_correctness_fixes.sql` (required: numeric cost precision, aggregate RPCs, sync rate-limit column)
 
 If your local or remote database does not yet include the latest schema changes, apply the corresponding migrations first.
 
@@ -145,6 +146,14 @@ If your local or remote database does not yet include the latest schema changes,
 ## Known Limitations
 - `usage_records.date` uses the provider's UTC bucket date, so it may differ by one day from the user's local calendar date
 - Anthropic same-day data may appear later than the Anthropic console and may require syncing again later or the next day
+- Anthropic `input_tokens` includes cache-creation and cache-read tokens, so the input token count is intentionally broader than the console's "input" column
+- Costs that cannot be matched to a usage row (e.g. embeddings, web search, code execution) are stored as synthetic records with zero tokens so spend totals stay accurate
+
+## Tests
+```bash
+npm test
+```
+Unit tests cover model-name canonicalization and cost allocation/conservation logic.
 
 ## Project Boundaries
 - No real-time streaming monitoring

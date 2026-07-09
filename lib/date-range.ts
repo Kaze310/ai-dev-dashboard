@@ -76,12 +76,16 @@ export function getMonthRange(year: number, month: number) {
   return { start, endExclusive };
 }
 
-export function getTodayRange(timeZone: string) {
+export function getYesterdayRange(timeZone: string) {
+  // 当天 cost 供应商尚未结算(usage 接口只给当天 token),展示昨天这一
+  // 已结算的完整自然日,避免快照大半天恒为 0。范围按 UTC bucket 语义:
+  // date >= 昨天 且 date < 今天，即昨天一整天。
   const today = formatYmdInTimeZone(new Date(), timeZone);
+  const yesterday = addDays(today, -1);
   return {
-    start: today,
-    endExclusive: addDays(today, 1),
-    label: getDayLabel(today, timeZone),
+    start: yesterday,
+    endExclusive: today,
+    label: getDayLabel(yesterday, timeZone),
   };
 }
 

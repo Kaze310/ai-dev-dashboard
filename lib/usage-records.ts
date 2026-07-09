@@ -1,3 +1,5 @@
+export { toNumber } from "@/lib/normalize";
+
 export type ProviderRef = {
   name: string;
 };
@@ -12,19 +14,6 @@ export type UsageRecordRow = {
   provider: ProviderRef | ProviderRef[] | null;
 };
 
-export function toNumber(value: number | string | null | undefined): number {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  return 0;
-}
-
 export function formatDate(dateString: string) {
   return new Date(`${dateString}T00:00:00.000Z`).toLocaleDateString("en-US", {
     timeZone: "UTC",
@@ -32,7 +21,13 @@ export function formatDate(dateString: string) {
 }
 
 export function formatCost(cents: number) {
-  return `$${(cents / 100).toFixed(2)}`;
+  // 非 0 但不足一分钱的花费显示 <$0.01,而不是误导性的 $0.00。
+  // 总额仍按真实 numeric 累加,这里只是展示层处理。
+  const dollars = cents / 100;
+  if (dollars > 0 && dollars < 0.01) {
+    return "<$0.01";
+  }
+  return `$${dollars.toFixed(2)}`;
 }
 
 export function getProviderName(provider: UsageRecordRow["provider"]) {
