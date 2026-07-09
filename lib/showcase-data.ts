@@ -24,6 +24,7 @@ export type ShowcaseData = {
   generatedAt: string | null;
   periodLabel: string;
   currentMonthUsd: number;
+  totalSpendUsd: number;
   totalTokens: number;
   budgetUsagePct: number;
   providerTotals: ShowcaseProviderTotal[];
@@ -36,6 +37,7 @@ type SnapshotRow = {
   generated_at: string | null;
   period_label: string | null;
   current_month_cents: number | string | null;
+  total_spend_cents: number | string | null;
   total_tokens: number | string | null;
   budget_usage_pct: number | string | null;
   provider_totals: unknown;
@@ -100,6 +102,7 @@ function normalizeSnapshot(row: SnapshotRow): ShowcaseData {
     generatedAt: row.generated_at,
     periodLabel: row.period_label || "Current month",
     currentMonthUsd: Math.max(0, toNumber(row.current_month_cents)) / 100,
+    totalSpendUsd: Math.max(0, toNumber(row.total_spend_cents)) / 100,
     totalTokens: Math.max(0, toNumber(row.total_tokens)),
     budgetUsagePct: Math.min(100, Math.max(0, toNumber(row.budget_usage_pct))),
     providerTotals: [...providerMap.entries()]
@@ -117,6 +120,7 @@ const emptyShowcaseData: ShowcaseData = {
   generatedAt: null,
   periodLabel: "Current month",
   currentMonthUsd: 0,
+  totalSpendUsd: 0,
   totalTokens: 0,
   budgetUsagePct: 0,
   providerTotals: [],
@@ -129,7 +133,7 @@ export async function getShowcaseData(): Promise<ShowcaseData> {
   const supabase = createPublicServerClient();
   const { data, error } = await supabase
     .from("showcase_snapshots")
-    .select("generated_at, period_label, current_month_cents, total_tokens, budget_usage_pct, provider_totals, model_totals, daily_totals")
+    .select("generated_at, period_label, current_month_cents, total_spend_cents, total_tokens, budget_usage_pct, provider_totals, model_totals, daily_totals")
     .eq("id", true)
     .maybeSingle();
 

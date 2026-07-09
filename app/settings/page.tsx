@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 
 import { BudgetSettingsForm } from "./BudgetSettingsForm";
 import { OpenAISettingsForm } from "./OpenAISettingsForm";
-import { ShowcaseRefreshPanel } from "./ShowcaseRefreshPanel";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -57,7 +56,6 @@ export default async function SettingsPage() {
 
       <OpenAISettingsForm hasOpenAIKey={names.has("openai")} hasAnthropicKey={names.has("anthropic")} />
       <BudgetSettingsForm />
-      <ShowcaseRefreshPanel />
     </main>
   );
 }

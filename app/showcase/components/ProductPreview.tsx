@@ -6,6 +6,7 @@ export type ProductPreviewStatus = {
   label: string;
   value: string;
   tone?: "positive" | "neutral" | "warning";
+  href?: string;
 };
 
 export type ProductPreviewProps = {
@@ -35,6 +36,8 @@ function statusClass(tone: ProductPreviewStatus["tone"]) {
   return "bg-[#d7ebe6] text-[#1f6f78]";
 }
 
+const statusLinkClass = "inline-flex min-h-10 items-center justify-center rounded-full border border-[color:var(--line)] bg-white/75 px-3.5 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:-translate-y-0.5 hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-2";
+
 export function ProductPreview({
   title,
   description,
@@ -55,9 +58,17 @@ export function ProductPreview({
         </div>
 
         {status ? (
-          <div className="flex shrink-0 items-center gap-2 text-sm">
-            <span className={`rounded-full px-3 py-1.5 font-medium ${statusClass(status.tone)}`}>{status.value}</span>
-            <span className="text-zinc-500">{status.label}</span>
+          <div className="flex shrink-0 flex-wrap items-center gap-2 text-sm">
+            <Link
+              href={status.href ?? "#showcase-metrics"}
+              className={`inline-flex min-h-10 items-center justify-center rounded-full px-3.5 py-2 font-medium shadow-sm hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--accent)] focus-visible:ring-offset-2 ${statusClass(status.tone)}`}
+              aria-label={`${status.value}: view snapshot metrics`}
+            >
+              {status.value}
+            </Link>
+            <Link href={status.href ?? "#showcase-metrics"} className={statusLinkClass}>
+              {status.label}
+            </Link>
           </div>
         ) : null}
       </div>

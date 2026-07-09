@@ -31,7 +31,7 @@ function metricToneClass(tone: ShowcaseMetric["tone"]) {
 
 export function MetricCards({ metrics, title = "At a glance", description }: MetricCardsProps) {
   return (
-    <section aria-labelledby="showcase-metrics-title" className="mt-6">
+    <section id="showcase-metrics" aria-labelledby="showcase-metrics-title" className="mt-6 scroll-mt-6">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
         <div>
           <p className="section-eyebrow">Snapshot</p>

@@ -41,8 +41,8 @@ function buildMetrics(data: ShowcaseData) {
   return [
     {
       id: "monthly-spend",
-      label: "Current month spend",
-      value: formatUsd(data.currentMonthUsd),
+      label: "Synced spend",
+      value: formatUsd(data.totalSpendUsd),
       detail: data.periodLabel,
       tone: "accent" as const,
     },
@@ -61,11 +61,11 @@ function buildMetrics(data: ShowcaseData) {
       tone: "neutral" as const,
     },
     {
-      id: "budget-status",
-      label: "Budget utilization",
-      value: `${Math.round(data.budgetUsagePct)}%`,
-      detail: data.budgetUsagePct > 80 ? "Approaching configured guardrail" : "Within configured guardrail",
-      tone: data.budgetUsagePct > 80 ? ("warning" as const) : ("positive" as const),
+      id: "model-families",
+      label: "Model families",
+      value: String(data.modelTotals.length),
+      detail: "Normalized for comparison",
+      tone: "positive" as const,
     },
   ];
 }
@@ -126,6 +126,7 @@ export default async function ShowcasePage() {
           label: "Data status",
           value: data.isLive ? "Live aggregate" : "Preview pending",
           tone: data.isLive ? "positive" : "warning",
+          href: "#showcase-metrics",
         }}
         previewHref="/login"
         previewLabel="Open full dashboard"
