@@ -26,16 +26,9 @@ export type ShowcaseModelCostPoint = {
   costUsd: number;
 };
 
-export type ShowcaseDailyTokenPoint = {
-  date: string;
-  inputTokens: number;
-  outputTokens: number;
-};
-
 export type ShowcaseChartsProps = {
   dailyCostTrend: ReadonlyArray<ShowcaseDailyCostPoint>;
   costByModel: ReadonlyArray<ShowcaseModelCostPoint>;
-  dailyTokenUsage: ReadonlyArray<ShowcaseDailyTokenPoint>;
   title?: string;
   description?: string;
 };
@@ -122,13 +115,11 @@ function EmptyChart({ message }: { message: string }) {
 export function ShowcaseCharts({
   dailyCostTrend,
   costByModel,
-  dailyTokenUsage,
   title = "Usage, cost, and model mix",
   description = "A compact view of the signals the dashboard brings together for day-to-day AI spend decisions.",
 }: ShowcaseChartsProps) {
   const hasCostTrendData = dailyCostTrend.some((point) => point.openai > 0 || point.anthropic > 0 || point.other > 0);
   const hasModelCostData = costByModel.some((point) => point.costUsd > 0);
-  const hasTokenData = dailyTokenUsage.some((point) => point.inputTokens > 0 || point.outputTokens > 0);
 
   return (
     <section aria-labelledby="showcase-charts-title" className="mt-10">
@@ -163,10 +154,10 @@ export function ShowcaseCharts({
           </div>
         </article>
 
-        <article className="glass-panel min-w-0 rounded-[26px] p-5" aria-label="Cost by model chart">
+        <article className="glass-panel min-w-0 rounded-[26px] p-5" aria-label="Cost by model family chart">
           <p className="section-eyebrow">Mix</p>
-          <h3 className="mt-2 text-base font-semibold text-zinc-900">Cost by model</h3>
-          <p className="mt-1 text-sm text-zinc-600">The models contributing most to spend.</p>
+          <h3 className="mt-2 text-base font-semibold text-zinc-900">Cost by model family</h3>
+          <p className="mt-1 text-sm text-zinc-600">Normalized model families ranked by total spend.</p>
           <div className="mt-4 min-w-0">
             {hasModelCostData ? (
               <ResponsiveContainer width="100%" height={260}>
@@ -179,34 +170,11 @@ export function ShowcaseCharts({
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <EmptyChart message="No model cost data for this showcase window." />
+              <EmptyChart message="No model-family cost data for this showcase window." />
             )}
           </div>
         </article>
       </div>
-
-      <article className="glass-panel mt-4 min-w-0 rounded-[26px] p-5" aria-label="Daily token usage chart">
-        <p className="section-eyebrow">Volume</p>
-        <h3 className="mt-2 text-base font-semibold text-zinc-900">Daily token usage</h3>
-        <p className="mt-1 text-sm text-zinc-600">Input and output volume in the same reporting window.</p>
-        <div className="mt-4 min-w-0">
-          {hasTokenData ? (
-            <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={dailyTokenUsage} margin={{ top: 8, right: 4, left: 0, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="4 6" stroke="#d7d2c8" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={formatDateLabel} axisLine={false} tickLine={false} tick={{ fill: "#667274", fontSize: 11 }} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: "#667274", fontSize: 11 }} width={50} />
-                <Tooltip content={<ChartTooltip />} />
-                <Legend wrapperStyle={{ fontSize: "12px" }} />
-                <Bar dataKey="inputTokens" stackId="tokens" fill="#4a8fb0" radius={[7, 7, 0, 0]} name="Input tokens" />
-                <Bar dataKey="outputTokens" stackId="tokens" fill="#d48645" radius={[7, 7, 0, 0]} name="Output tokens" minPointSize={2} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <EmptyChart message="No token data for this showcase window." />
-          )}
-        </div>
-      </article>
     </section>
   );
 }

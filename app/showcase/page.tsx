@@ -9,7 +9,8 @@ import { ShowcaseCharts } from "./components/ShowcaseCharts";
 import { ShowcaseFooter } from "./components/ShowcaseFooter";
 import { ShowcaseHeader } from "./components/ShowcaseHeader";
 
-export const dynamic = "force-dynamic";
+export const dynamic = "force-static";
+export const revalidate = false;
 
 export const metadata: Metadata = {
   title: "AI Dev Dashboard | Public Showcase",
@@ -34,7 +35,7 @@ function snapshotDate(data: ShowcaseData) {
     return "Latest published snapshot";
   }
 
-  return `Updated ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
+  return `Published ${date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
 function buildMetrics(data: ShowcaseData) {
@@ -110,8 +111,8 @@ export default async function ShowcasePage() {
         productName="AI Dev Dashboard"
         tagline="One calm place to see AI spend, usage, and budget drift."
         description="A personal operations dashboard that turns provider-level API reports into a unified view for day-to-day cost decisions."
-        demoHref="/login"
-        demoLabel="Try the app"
+        demoHref="#showcase-metrics"
+        demoLabel="View project data"
         sourceHref="https://github.com/Kaze310/ai-dev-dashboard"
         sourceLabel="View source"
       />
@@ -121,15 +122,11 @@ export default async function ShowcasePage() {
         description="The dashboard keeps cost summary, provider mix, budget guardrails, and model-level trends in one workspace."
         imageSrc="/screenshots/dashboard.png"
         imageAlt="AI Dev Dashboard showing cost summary, budget status, and usage charts"
-        caption={data.isLive ? `${snapshotDate(data)} · Public view uses aggregated data only.` : "Apply the showcase migration and publish a snapshot from Settings to show your current data here."}
+        caption={data.isPublished ? `${snapshotDate(data)} · Public view uses aggregated data only.` : "Public snapshot is currently unavailable."}
         status={{
-          label: "Data status",
-          value: data.isLive ? "Live aggregate" : "Preview pending",
-          tone: data.isLive ? "positive" : "warning",
-          href: "#showcase-metrics",
+          value: data.isPublished ? "Published snapshot" : "Snapshot unavailable",
+          tone: data.isPublished ? "positive" : "warning",
         }}
-        previewHref="/login"
-        previewLabel="Open full dashboard"
       />
 
       <MetricCards
@@ -140,7 +137,6 @@ export default async function ShowcasePage() {
       <ShowcaseCharts
         dailyCostTrend={data.dailyTotals}
         costByModel={data.modelTotals}
-        dailyTokenUsage={data.dailyTotals}
       />
 
       <FeatureHighlights
@@ -151,8 +147,6 @@ export default async function ShowcasePage() {
       <ShowcaseFooter
         productName="AI Dev Dashboard"
         note="Public showcase with aggregated, non-sensitive data. Private records, provider credentials, and account details remain behind authentication."
-        demoHref="/login"
-        demoLabel="Open the app"
         sourceHref="https://github.com/Kaze310/ai-dev-dashboard"
         sourceLabel="View source"
         metadata={["Next.js", "TypeScript", "Supabase", "Recharts", "Vercel"]}

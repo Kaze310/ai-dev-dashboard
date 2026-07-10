@@ -132,6 +132,7 @@ Current migration files:
 - `supabase/migrations/004_20260610_correctness_fixes.sql` (required: numeric cost precision, aggregate RPCs, sync rate-limit column)
 - `supabase/migrations/005_public_showcase_snapshots.sql` (creates the public showcase table)
 - `supabase/migrations/20260709170000_populate_public_showcase_snapshot.sql` (one-time snapshot capture)
+- `supabase/migrations/20260710120000_scope_public_showcase_snapshot.sql` (locks the snapshot to the sole data owner)
 
 If your local or remote database does not yet include the latest schema changes, apply the corresponding migrations first.
 
@@ -139,7 +140,7 @@ If your local or remote database does not yet include the latest schema changes,
 
 The public `/showcase` route reads one curated aggregate snapshot. It does not query raw usage records, provider credentials, user email addresses, or account IDs.
 
-The timestamped migration captures the existing synced data once and writes one curated public snapshot. The public page is read-only; it includes total synced spend, token volume, provider totals, model-family totals, and a 90-day trend without exposing raw usage records or credentials.
+The timestamped migrations capture the existing synced data once and write one curated public snapshot for the sole data owner. The public page is statically generated at build time and does not query Supabase when a reviewer visits it. It includes total synced spend, token volume, provider totals, model-family totals, and a 90-day trend without exposing raw usage records or credentials.
 
 ## API Key Requirements
 - OpenAI usage / cost sync requires an **Admin API key**

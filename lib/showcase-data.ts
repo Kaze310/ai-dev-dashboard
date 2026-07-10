@@ -30,7 +30,7 @@ export type ShowcaseData = {
   providerTotals: ShowcaseProviderTotal[];
   modelTotals: ShowcaseModelTotal[];
   dailyTotals: ShowcaseDailyTotal[];
-  isLive: boolean;
+  isPublished: boolean;
 };
 
 type SnapshotRow = {
@@ -112,7 +112,7 @@ function normalizeSnapshot(row: SnapshotRow): ShowcaseData {
       .sort((a, b) => b[1] - a[1])
       .map(([model, costUsd]) => ({ model, costUsd })),
     dailyTotals,
-    isLive: true,
+    isPublished: true,
   };
 }
 
@@ -126,7 +126,7 @@ const emptyShowcaseData: ShowcaseData = {
   providerTotals: [],
   modelTotals: [],
   dailyTotals: [],
-  isLive: false,
+  isPublished: false,
 };
 
 export async function getShowcaseData(): Promise<ShowcaseData> {
