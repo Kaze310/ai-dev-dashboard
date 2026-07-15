@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-type Mode = "yesterday" | "month" | "ytd";
+type Mode = "yesterday" | "month" | "ytd" | "ltd";
 
 type CostSummaryResponse = {
   mode: Mode;
@@ -139,27 +139,34 @@ export function CostSummary() {
           <h2 className="mt-2 text-xl font-semibold text-zinc-900">Cost Summary</h2>
         </div>
 
-        <div className="inline-flex rounded-full border border-[color:var(--line)] bg-white/75 p-1 text-sm shadow-sm">
+        <div className="grid w-full grid-cols-4 rounded-full border border-[color:var(--line)] bg-white/75 p-1 text-xs shadow-sm sm:inline-flex sm:w-auto sm:text-sm">
           <button
             type="button"
             onClick={() => setMode("yesterday")}
-            className={`rounded-full px-3 py-1.5 ${mode === "yesterday" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
+            className={`rounded-full px-1.5 py-1.5 sm:px-3 ${mode === "yesterday" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
           >
             Yesterday
           </button>
           <button
             type="button"
             onClick={() => setMode("month")}
-            className={`rounded-full px-3 py-1.5 ${mode === "month" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
+            className={`rounded-full px-1.5 py-1.5 sm:px-3 ${mode === "month" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
           >
             This Month
           </button>
           <button
             type="button"
             onClick={() => setMode("ytd")}
-            className={`rounded-full px-3 py-1.5 ${mode === "ytd" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
+            className={`rounded-full px-1.5 py-1.5 sm:px-3 ${mode === "ytd" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
           >
             YTD
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("ltd")}
+            className={`rounded-full px-1.5 py-1.5 sm:px-3 ${mode === "ltd" ? "bg-[color:var(--foreground)] text-white shadow-sm" : "text-zinc-700"}`}
+          >
+            LTD
           </button>
         </div>
       </div>
