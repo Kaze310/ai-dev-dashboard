@@ -46,7 +46,7 @@ export function getMonthLabel(year: number, month: number, timeZone: string) {
   }).format(date);
 }
 
-export function getDayLabel(ymd: string, timeZone: string) {
+export function getDayLabel(ymd: string) {
   const date = new Date(`${ymd}T00:00:00.000Z`);
   return new Intl.DateTimeFormat("en-US", {
     // ymd 已是日期键，这里固定 UTC 稳定展示。
@@ -85,7 +85,7 @@ export function getYesterdayRange(timeZone: string) {
   return {
     start: yesterday,
     endExclusive: today,
-    label: getDayLabel(yesterday, timeZone),
+    label: getDayLabel(yesterday),
   };
 }
 
@@ -96,6 +96,6 @@ export function getYtdRange(timeZone: string) {
   return {
     start,
     endExclusive: addDays(today, 1),
-    label: `${getDayLabel(start, timeZone)} - ${getDayLabel(today, timeZone)}`,
+    label: `${getDayLabel(start)} - ${getDayLabel(today)}`,
   };
 }

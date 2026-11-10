@@ -85,6 +85,13 @@ Provider responses are inconsistent about model names, aggregation rows, and bil
 
 ## Local Development
 
+### AWS migration status
+
+The application currently uses Supabase for authentication and business data.
+AWS deployment has not been performed, and EC2, RDS, and automated deployment
+are not configured yet. The migration will use RDS directly; local PostgreSQL
+is not required. Docker will be introduced later to package the application.
+
 ### 1. Install dependencies
 ```bash
 npm install
@@ -92,6 +99,9 @@ npm install
 
 ### 2. Configure environment variables
 Create a `.env.local` file in the project root:
+
+Use `.env.example` as a reference. If `.env.local` already exists, keep its
+values, especially the encryption secret needed to decrypt existing API keys.
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
@@ -122,6 +132,16 @@ http://localhost:3000
 ```
 
 If port `3000` is already in use, Next.js will automatically switch to another port.
+
+### 4. Run the project checks
+
+```bash
+npm run check
+```
+
+This runs ESLint (zero warnings allowed), generated Next.js route types,
+TypeScript, Vitest, and the production build. The build currently reads a public
+Supabase showcase snapshot, so use the existing `.env.local` configuration.
 
 ## Database Migrations
 Current migration files:

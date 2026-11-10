@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { supabaseAnonKey, supabaseUrl } from "@/lib/supabase/config";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   // 默认继续后续流程；如果 Supabase 刷新了 cookie，会在下面替换 response。
   let response = NextResponse.next({
     request,
@@ -16,7 +16,7 @@ export async function middleware(request: NextRequest) {
       },
       setAll(cookiesToSet) {
         // 先把 cookie 更新到 request，再生成新的 response，保证上下文一致。
-        cookiesToSet.forEach(({ name, value, options }) => {
+        cookiesToSet.forEach(({ name, value }) => {
           request.cookies.set(name, value);
         });
 
@@ -39,6 +39,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // 排除 /api:route handler 自己会 getUser(并能在需要时刷新 cookie),
-  // 此前 middleware + route 每个 API 请求做两次 Supabase auth 往返。
+  // 避免 proxy + route 每个 API 请求做两次 Supabase auth 往返。
   matcher: ["/((?!api/|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

@@ -21,10 +21,6 @@ type MonthOption = {
   month: number;
 };
 
-function pad2(value: number) {
-  return String(value).padStart(2, "0");
-}
-
 function formatUsd(cents: number) {
   // 非 0 但不足一分钱显示 <$0.01,避免显示成 $0.00。
   const dollars = cents / 100;
