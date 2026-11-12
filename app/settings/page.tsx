@@ -1,29 +1,15 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
+import { requirePageSession } from "@/lib/auth/session";
+import { getConfiguredProviders } from "@/lib/db/data";
 
 import { BudgetSettingsForm } from "./BudgetSettingsForm";
 import { OpenAISettingsForm } from "./OpenAISettingsForm";
 import { AccountActions } from "@/app/components/AccountActions";
 
 export default async function SettingsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    // 未登录用户不能进入设置页。
-    redirect("/login");
-  }
-
-  // 这里只返回是否存在 key，不把 key 返回给客户端，避免泄露。
-  const { data: providers } = await supabase
-    .from("providers")
-    .select("name")
-    .eq("user_id", user.id)
-    .in("name", ["openai", "anthropic"]);
+  const user = await requirePageSession();
+  const providers = await getConfiguredProviders(user.sub);
 
   const names = new Set((providers ?? []).map((item) => item.name));
 

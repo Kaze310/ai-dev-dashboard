@@ -41,3 +41,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local migration planning notes; never publish.
+/AWS_MIGRATION_PLAN.md

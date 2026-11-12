@@ -1,0 +1,35 @@
+# Local application container only. PostgreSQL remains on RDS.
+# Run from this directory: docker compose --env-file .env.local up --build -d
+services:
+  app:
+    image: ai-dev-dashboard:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Override the Mac host path when Next.js loads the mounted .env.local.
+      DATABASE_CA_CERT_PATH: /run/certs/rds-ca.pem
+    volumes:
+      # Let Next.js parse the original file: preserve its quoting/escaping rules.
+      # No secrets are copied into an image layer or stored in this Compose file.
+      - type: bind
+        source: ./.env.local
+        target: /app/.env.local
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${DATABASE_CA_CERT_PATH:?Set the absolute RDS CA bundle path in .env.local}
+        target: /run/certs/rds-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,0 +1,29 @@
+# Run on EC2 from ~/ai-dev-dashboard. Configure the HTTPS origin before public use.
+# Runtime configuration and the RDS CA bundle are provisioned separately.
+services:
+  app:
+    image: 579730595850.dkr.ecr.us-east-2.amazonaws.com/ai-dev-dashboard:20261112-01
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DATABASE_CA_CERT_PATH: /run/certs/rds-ca.pem
+    volumes:
+      - type: bind
+        source: ./.env.local
+        target: /app/.env.local
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./rds-ca.pem
+        target: /run/certs/rds-ca.pem
+        read_only: true
+        bind:
+          create_host_path: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

@@ -1,4 +1,5 @@
-import { createPublicServerClient } from "@/lib/supabase/public-server";
+import "server-only";
+import { showcaseDatabase } from "@/lib/db/pool";
 
 export type ShowcaseProviderTotal = {
   name: string;
@@ -130,19 +131,15 @@ const emptyShowcaseData: ShowcaseData = {
 };
 
 export async function getShowcaseData(): Promise<ShowcaseData> {
-  const supabase = createPublicServerClient();
-  const { data, error } = await supabase
-    .from("showcase_snapshots")
-    .select("generated_at, period_label, current_month_cents, total_spend_cents, total_tokens, budget_usage_pct, provider_totals, model_totals, daily_totals")
-    .eq("id", true)
-    .maybeSingle();
-
-  if (error || !data) {
-    if (error) {
-      console.error("Unable to load public showcase snapshot", error.message);
-    }
+  try {
+    const { rows } = await showcaseDatabase().query<SnapshotRow>(`
+      SELECT to_char(generated_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS generated_at,
+             period_label, current_month_cents, total_spend_cents, total_tokens,
+             budget_usage_pct, provider_totals, model_totals, daily_totals
+      FROM public.showcase_snapshots WHERE id = true`);
+    return rows[0] ? normalizeSnapshot(rows[0]) : emptyShowcaseData;
+  } catch {
+    console.error("Unable to load public showcase snapshot");
     return emptyShowcaseData;
   }
-
-  return normalizeSnapshot(data as SnapshotRow);
 }

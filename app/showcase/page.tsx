@@ -9,8 +9,7 @@ import { ShowcaseCharts } from "./components/ShowcaseCharts";
 import { ShowcaseFooter } from "./components/ShowcaseFooter";
 import { ShowcaseHeader } from "./components/ShowcaseHeader";
 
-export const dynamic = "force-static";
-export const revalidate = false;
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "AI Dev Dashboard | Public Showcase",
@@ -83,7 +82,7 @@ const features = [
     id: "security",
     eyebrow: "Data boundary",
     title: "RLS-backed user isolation",
-    description: "Supabase Row Level Security keeps private records scoped to the signed-in account.",
+    description: "PostgreSQL Row Level Security keeps private records scoped to the signed-in account.",
     detail: "The public page reads only a curated aggregate snapshot.",
   },
   {
@@ -149,7 +148,7 @@ export default async function ShowcasePage() {
         note="Public showcase with aggregated, non-sensitive data. Private records, provider credentials, and account details remain behind authentication."
         sourceHref="https://github.com/Kaze310/ai-dev-dashboard"
         sourceLabel="View source"
-        metadata={["Next.js", "TypeScript", "Supabase", "Recharts", "Vercel"]}
+        metadata={["Next.js", "TypeScript", "PostgreSQL", "Cognito", "Recharts"]}
       />
     </main>
   );

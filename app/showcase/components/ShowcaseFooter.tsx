@@ -39,7 +39,7 @@ export function ShowcaseFooter({
   contactHref,
   contactLabel = "Contact",
   note = "Public showcase with aggregated, non-sensitive data.",
-  metadata = ["Next.js", "Supabase", "Recharts"],
+  metadata = ["Next.js", "PostgreSQL", "Recharts"],
 }: ShowcaseFooterProps) {
   return (
     <footer className="mt-12 border-t border-[color:var(--line)] pb-8 pt-6">

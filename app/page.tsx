@@ -1,26 +1,15 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { getBudgetData, type BudgetData } from "@/lib/budget-data";
 import { toNumber } from "@/lib/normalize";
-import { createClient } from "@/lib/supabase/server";
+import { requirePageSession } from "@/lib/auth/session";
+import { getChartData, type ChartAggregateRow } from "@/lib/db/data";
 
 import { BudgetSection } from "./components/BudgetSection";
 import { DashboardCharts, type DailyCostPoint, type DailyTokenPoint, type ModelCostPoint } from "./components/DashboardCharts";
 import { SyncButtons } from "./SyncButtons";
 import { CostSummary } from "./components/CostSummary";
 import { AccountActions } from "./components/AccountActions";
-
-// usage_daily_model_aggregates RPC 的返回行:已在数据库端按
-// (date, provider, model) 聚合,避开 PostgREST 1000 行截断。
-type ChartAggregateRow = {
-  date: string;
-  provider_name: string;
-  model: string;
-  input_tokens: number | string | null;
-  output_tokens: number | string | null;
-  cost_cents: number | string | null;
-};
 
 function normalizeDateKey(value: unknown) {
   // 兼容 YYYY-MM-DD、ISO datetime,统一聚合键为 YYYY-MM-DD。
@@ -157,39 +146,20 @@ function aggregateChartData(rows: ChartAggregateRow[], startDate: string, endExc
 }
 
 export default async function Home() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
+  const user = await requirePageSession();
 
   const { start: chartStart, endExclusive: chartEndExclusive } = getLast30DaysRange();
 
-  // 图表数据与预算数据都在服务端取齐:图表走数据库端聚合 RPC,
-  // 预算复用 /api/budget 同一取数路径,首屏少一次客户端往返。
-  const [chartResult, budgetResult] = await Promise.all([
-    supabase.rpc("usage_daily_model_aggregates", {
-      p_start: chartStart,
-      p_end_exclusive: chartEndExclusive,
-    }),
-    getBudgetData(supabase, user.id).then(
+  const [chartRows, budgetResult] = await Promise.all([
+    getChartData(user.sub, chartStart, chartEndExclusive),
+    getBudgetData(user.sub).then(
       (data): { data: BudgetData; error: null } => ({ data, error: null }),
-      (error: unknown): { data: null; error: string } => ({
-        data: null,
-        error: error instanceof Error ? error.message : String(error),
-      }),
+      (): { data: null; error: string } => ({ data: null, error: "Unable to load budgets. Please try again." }),
     ),
   ]);
 
-  if (chartResult.error) {
-    throw new Error(chartResult.error.message);
-  }
-
   const { dailyCostTrend, dailyTokenUsage, costByModel } = aggregateChartData(
-    (chartResult.data ?? []) as ChartAggregateRow[],
+    chartRows,
     chartStart,
     chartEndExclusive,
   );

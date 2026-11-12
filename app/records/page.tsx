@@ -1,34 +1,13 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
 
 import { UsageRecordsTable } from "@/app/components/UsageRecordsTable";
 import { AccountActions } from "@/app/components/AccountActions";
-import { createClient } from "@/lib/supabase/server";
-import type { UsageRecordRow } from "@/lib/usage-records";
+import { requirePageSession } from "@/lib/auth/session";
+import { getUsageRecords } from "@/lib/db/data";
 
 export default async function RecordsPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    redirect("/login");
-  }
-
-  const { data, error } = await supabase
-    .from("usage_records")
-    .select("id, date, model, input_tokens, output_tokens, cost_cents, provider:providers(name)")
-    .eq("user_id", user.id)
-    .order("date", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(250);
-
-  if (error) {
-    throw new Error(error.message);
-  }
-
-  const rows = (data ?? []) as UsageRecordRow[];
+  const user = await requirePageSession();
+  const rows = await getUsageRecords(user.sub);
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-10 sm:px-6 sm:py-14">

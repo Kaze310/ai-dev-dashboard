@@ -9,7 +9,8 @@ import {
   getYtdRange,
 } from "@/lib/date-range";
 import { toNumber } from "@/lib/normalize";
-import { createClient } from "@/lib/supabase/server";
+import { authorizeApi, apiFailure } from "@/lib/auth/session";
+import { getCostTotal } from "@/lib/db/data";
 
 type Mode = "yesterday" | "month" | "ytd" | "ltd";
 
@@ -26,15 +27,8 @@ function parseMonthValue(monthParam: string | null, yearParam: string | null, ti
 }
 
 export async function GET(request: NextRequest) {
-  const supabase = await createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const { user, response } = await authorizeApi();
+  if (!user) return response;
 
   const timeZone = getAppTimeZone();
   const modeParam = request.nextUrl.searchParams.get("mode");
@@ -75,26 +69,8 @@ export async function GET(request: NextRequest) {
     label = getMonthLabel(year, month, timeZone);
   }
 
-  // 汇总下推数据库:此前 select 原始行再 JS 求和,PostgREST 默认 1000 行
-  // 上限会静默截断(YTD 必然超限),总额偏小且无任何报错。
-  const { data, error } = await supabase.rpc("usage_cost_total", {
-    p_start: start,
-    p_end_exclusive: endExclusive,
-  });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const totalCents = toNumber(data);
-
-  return NextResponse.json({
-    mode,
-    timeZone,
-    label,
-    start,
-    endExclusive,
-    totalCents,
-    totalUsd: totalCents / 100,
-  });
+  try {
+    const totalCents = toNumber(await getCostTotal(user.sub, start, endExclusive));
+    return NextResponse.json({ mode, timeZone, label, start, endExclusive, totalCents, totalUsd: totalCents / 100 });
+  } catch (error) { return apiFailure(error); }
 }

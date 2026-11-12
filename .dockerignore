@@ -1,0 +1,25 @@
+# Allow only build inputs. Exclude local credentials, Git, migration notes,
+# backups, screenshots and host build/dependency directories by default.
+**
+!package.json
+!package-lock.json
+!next.config.ts
+!tsconfig.json
+!postcss.config.mjs
+!app/
+!app/**
+!lib/
+!lib/**
+!public/
+!public/**
+
+# Never admit credentials or tests even if placed under an allowed directory.
+**/.env*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/node_modules
+**/__tests__
+**/*.test.*
+**/*.spec.*
